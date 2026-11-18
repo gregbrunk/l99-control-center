@@ -1,0 +1,13 @@
+# macOS / Xcode
+.DS_Store
+xcuserdata/
+DerivedData/
+.build/
+
+# Research: only our own notes are tracked. Firmware dumps, the vendor
+# driver, the reset package and third-party repos stay out of git.
+research/*
+!research/FINDINGS.md
+!research/SMOKE_TEST.md
+!research/Salamor_issue3.md
+!research/notes/

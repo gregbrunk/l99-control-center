@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSLocationUsageDescription</key>
+	<string>Your approximate location is used to show local weather on the keyboard's screen.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Your approximate location is used to show local weather on the keyboard's screen.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>The Mac's sound is measured in memory to move the music bars on the keyboard's screen. Nothing is recorded or saved.</string>
+</dict>
+</plist>

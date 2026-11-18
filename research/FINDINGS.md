@@ -263,6 +263,48 @@ A GIF that fails validation is still acknowledged, and the panel then plays a ca
 
 ---
 
+## Screen catalog (Phase 3, Nov 18): our own parse of the interface file
+
+Done offline with our own read-only parser, `tools/screen-catalog/catalog.py`. It opens only the file and checks its SHA first. It reads all 30 pages, every display and touch record, both icon banks and the three built-in animations, and renders every page. The renders match the real screens.
+
+**Page map:**
+
+| Page | Content |
+|---|---|
+| 0 | Boot animation |
+| 1, 2, 3 | Home: normal, work timer running, rest timer running |
+| 4 | Settings |
+| 5–14 | The settings sub-pages |
+| 15 | About |
+| 16 | Screen customisations |
+| 17 | Colour (lighting) |
+| 18 | Play |
+| 19 | Real-time Data |
+| 20 | Photo frame |
+| 21 | Mini Numpad |
+| 22 | Calculator |
+| 23 | Touchpad |
+| 25 | Loading |
+| 26 | Clock |
+| 27 | "Colour NG!" |
+
+**What each skin area is made of** (English bank; the Chinese bank shares most art):
+
+| Area | Made of | Skinnable? |
+|---|---|---|
+| Home icons | **One 287×272 ARGB4444 image** (icon 0 at `0x625FDC`, both banks differ) plus 10 touch records on page 1 that hold only rectangles and `goto` page. | ✅ Redraw the image. Touch areas are plain data, so apps can be **re-laid out or hidden without leaving a gap**. Touchpad is the last tile, so hiding it leaves no hole even without re-layout. |
+| Home media bar | Icons 560/561/562, 287×67 ARGB4444: one per home state (normal, work timer, rest timer). Four touch records: volume down/mute/up (`0x22`–`0x24`) and the alarm button (`0xF120`, goto 2). | ✅ |
+| App top bar | Shared indicator icons 1–20: connection, Caps, Num, battery (type-3 widgets, same positions on every page), digit icons 30–43 for the battery %, back button 119, and one title image per page. | ✅ Art and positions. |
+| Calculator | 18 touch buttons, each with an up and a down image (icons 400–435). The result line is a type-1 text widget drawn with a built-in font. | ✅ Buttons. ⚠️ The result digits use a font table, not icons. |
+| Numpad | 17 touch buttons with up/down images (icons 318–352). | ✅ |
+| Play | Play/pause (210/211), previous/next (208/209), volume pill (207). | ✅ Controls. ❌ **Visualiser: no record and no artwork for it anywhere in the file.** The bars are drawn by the screen's control program, so they can't be restyled through the interface file. |
+| Real-time Data | Everything is bitmap: three digit sets (213–226 large, 260–269, 280–289), units, labels. | ✅ Including the digit "font". |
+
+Other facts:
+- All 30 page-background descriptors are empty. The black backgrounds are drawn by the control program. Adding real page backgrounds would mean filling those descriptors, which is untested.
+- The active art for the user-visible areas sits between `0x625000` and `0x940000`. The page and touch records sit in `0x21DD0`–`0x251A5`.
+- **The upload command's address is the file offset.** Photo uploads write at `0x041E0000`, the same offset as the photo in the file. So the Mac upload command `0x64` might be able to rewrite single 128 KiB blocks of the interface art directly, which would install a skin without Windows. **Untested.** Open questions: does the screen accept `0x64` below `0x04000000`; does it erase and rewrite partial blocks correctly; does it cache art until a power cycle. Recovery from a bad write needs the Windows ISP tool, so this waits until the Windows restore test has passed.
+
 ## Protocol reference (for the build)
 
 ### Devices

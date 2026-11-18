@@ -185,6 +185,24 @@ Goal: feed the Real-time Data and Play pages from the Mac, over the dongle or th
 
 Goal: make the screen look better and carry less, with every keyboard function intact.
 
+**Direction (Alison, Nov 18): themes, not hyper-specific edits.**
+- **Skins by area**, each chosen from a small set in the app:
+  - home-screen icons;
+  - home-screen media bar;
+  - app top bar;
+  - Calculator;
+  - Numpad;
+  - Play page: media controls and visualiser style (the stock rainbow rectangles are to be replaced if they're artwork);
+  - Real-time Data page.
+- **Hide or show whole apps** on the home screen (e.g. hide Touchpad).
+- **Skins are made by Claude and added to the app's skin library**, e.g. a folder per skin with a manifest and exact-size artwork. New ones are generated on request later, the same way.
+- The app combines the chosen skins and hidden apps into one interface file, previews every changed page, proves nothing else changed, and the Windows tool installs it. Every change of skin means one Windows install.
+- **Screen catalog done (Nov 18)** (see FINDINGS.md, "Screen catalog"):
+  - Every area listed is made of plain artwork, except the Play visualiser bars. The control program draws those bars, so they can't be reskinned. Everything around them can.
+  - The Calculator's result digits use a built-in font.
+  - Home tiles are one picture with separate tap areas, so apps can be hidden and the grid closed up without a gap.
+- **Installing without Windows (to test):** the Mac upload command addresses the same flash offsets as the interface file. Rewriting only the changed 128 KiB blocks from the Mac might install a skin in seconds. This is untested, and outside today's write bounds. It needs Alison's approval and a passed Windows restore test first. Until then, the plan is one Windows install per skin change.
+
 - **Prerequisite:** a **confirmed Windows restore** of the full interface file, using AULA's ISP tool on the Windows machine. This must work before any interface write.
   - An in-app full restore is **out of scope**. The ISP erase/program sequence hasn't been reverse-engineered, it writes the whole 127.6 MB image, and no recovery from a half-written flash has been proven.
 - **Writing the reskinned file:** through the Windows ISP tool, too. The Mac app builds and previews the modified `UartTFT-II_Flash.bin`; Windows flashes it.

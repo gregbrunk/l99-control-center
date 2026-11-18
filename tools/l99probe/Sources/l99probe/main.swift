@@ -19,6 +19,9 @@ usage: l99probe <command> [options]
                                 the screen until the keyboard is switched off and on. Avoid.
   gif-test [--delay N]          Upload a 4-frame test animation (per-frame palettes, delay field N, default 400)
   gif --factory                 Re-upload the 171-frame factory animation, byte for byte (about a minute)
+  ui-block-test stock|blue      Mac skin-install test (research/MAC_INSTALL_TEST.md). Rewrites ONLY block 0x3B
+                                (Mini Numpad key art): "stock" = the stock bytes (steps A and C), "blue" = the
+                                Numpad "1" key tinted blue (step B). Run only after the Windows restore test passed.
   clock                         Set the keyboard clock (op 0x28, time only)
   stats                         Clock + distinctive test stats (CPU 42%/61°, GPU 17%/55°, 23° / 27° / 12°, 45%)
   music gavindi|axira           5-second test sweep on the Play page, in one of the two candidate layouts
@@ -267,6 +270,58 @@ func sendGIF(_ blob: [UInt8], label: String) throws {
     print("Now leave the GIF page and open it again to see it.")
 }
 
+func uiBlockTest() throws {
+    guard let name = args.first, let variant = InterfaceBlockTest.Variant(rawValue: name) else {
+        throw LinkError("ui-block-test needs stock or blue")
+    }
+    let stock = try InterfaceBlockTest.stockBlock(flashFile: factoryFile)
+    let block = try InterfaceBlockTest.block(variant, stock: stock)
+    let plan = InterfaceBlockTest.plan()
+    let expected = Checksum.crc32Screen(block)
+    print(String(format: "Prepared block 0x3B (%@): 0x%08X–0x%08X, %d writes + 1 check, expected CRC32 %08X (stock %08X).",
+                 variant.rawValue, InterfaceBlockTest.blockBase, InterfaceBlockTest.blockBase + UInt32(InterfaceBlockTest.blockSize) - 1,
+                 plan.count - 1, expected, Checksum.crc32Screen(stock)))
+    if dryRun {
+        let out = FileManager.default.currentDirectoryPath + "/l99probe-numpad1-\(variant.rawValue).png"
+        try Images.iconPreview(block, to: out)
+        print("Dry run: nothing opened or sent. The \"1\" key as it would look: \(out)")
+        return
+    }
+    print("""
+    This writes to the screen's interface area, outside the photo/background/GIF slots.
+    Only run it if the Windows restore test has passed and the Windows PC and reset package are at hand.
+    Cable plugged in, AULA's driver closed, don't touch the screen.
+    """)
+    guard confirm("Write block 0x3B (\(variant.rawValue))?") else { print("Cancelled."); return }
+    let port = try ScreenPort(); port.verbose = verbose
+    print("Screen port: \(port.path)")
+    let start = Date()
+    var done = 0
+    for step in plan {
+        switch step {
+        case .write(let address, let range):
+            let r: [UInt8]
+            do { r = try port.request(ScreenProtocol.commandWrite, address: address, data: Array(block[range])) }
+            catch {
+                throw LinkError(done == 0
+                    ? "The screen refused the first write (\(error)). Nothing was changed: it doesn't accept writes here. Stop the test."
+                    : "Write \(done + 1) failed (\(error)). Stopped mid-block: switch the keyboard off and on, then run ui-block-test stock.")
+            }
+            guard r.count >= 7, r[5] == 0x4F, r[6] == 0x4B else {
+                throw LinkError("Write \(done + 1) wasn't confirmed with OK (\(r.hex)). Stopped: switch the keyboard off and on, then run ui-block-test stock.")
+            }
+            done += 1
+            if !verbose { print("  \(done)/\(plan.count - 1) chunks", terminator: "\r"); fflush(stdout) }
+        case .check(let address, let range):
+            let got = try ScreenTransfer.regionCRC(port: port, address: address, length: range.count)
+            print(String(format: "\n  check 0x%08X len 0x%05X  device CRC %08X  expected %08X  %@", address, range.count, got, expected, got == expected ? "✓" : "✗ MISMATCH"))
+            guard got == expected else { throw LinkError("The screen holds different data than was sent. Stopped: run ui-block-test stock.") }
+        }
+    }
+    print(String(format: "Block written in %.1f s, all %d writes OK, CRC confirmed.", Date().timeIntervalSince(start), done))
+    print("Open the Mini Numpad page (leave and re-enter it if it was open). If nothing changed, switch the keyboard off and on and look again.")
+}
+
 // MARK: Dispatch
 
 do {
@@ -288,6 +343,7 @@ do {
     case "gif":
         guard flag("--factory") else { throw LinkError("gif needs --factory") }
         try sendGIF(try Images.factoryGIF(flashFile: factoryFile), label: "factory animation")
+    case "ui-block-test": try uiBlockTest()
     case "dongle-info": try dongleInfo()
     case "dongle-clock": try dongleClock(.prior, stats: false)
     case "dongle-stats":

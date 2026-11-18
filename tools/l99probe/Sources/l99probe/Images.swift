@@ -83,6 +83,28 @@ enum Images {
         try rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
     }
 
+    /// PNG of icon 341 (67×67 ARGB4444) from a block, over the black page, scaled 4×.
+    static func iconPreview(_ block: [UInt8], to path: String) throws {
+        let n = 67, s = 4
+        let ctx = CGContext(data: nil, width: n * s, height: n * s, bitsPerComponent: 8, bytesPerRow: n * s * 4,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let p = ctx.data!.assumingMemoryBound(to: UInt8.self)
+        let base = InterfaceBlockTest.iconRange.lowerBound
+        for y in 0..<(n * s) {
+            for x in 0..<(n * s) {
+                let i = base + 2 * ((y / s) * n + x / s)
+                let v = UInt16(block[i]) | UInt16(block[i + 1]) << 8
+                let a = Int(v >> 12) * 17
+                let c = [Int((v >> 8) & 15) * 17, Int((v >> 4) & 15) * 17, Int(v & 15) * 17]
+                for k in 0..<3 { p[4 * (y * n * s + x) + k] = UInt8(c[k] * a / 255) }
+                p[4 * (y * n * s + x) + 3] = 255
+            }
+        }
+        let rep = NSBitmapImageRep(cgImage: ctx.makeImage()!)
+        try rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
+    }
+
     /// The 171-frame factory animation, sliced from the verified factory file and checked.
     static func factoryGIF(flashFile: String) throws -> [UInt8] {
         guard let fh = FileHandle(forReadingAtPath: flashFile) else { throw LinkError("Factory file not found: \(flashFile)") }

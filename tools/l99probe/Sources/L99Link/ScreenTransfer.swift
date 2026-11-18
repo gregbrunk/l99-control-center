@@ -54,7 +54,7 @@ public enum ScreenTransfer {
         return true
     }
 
-    static func regionCRC(port: ScreenPort, address: UInt32, length: Int) throws -> UInt32 {
+    public static func regionCRC(port: ScreenPort, address: UInt32, length: Int) throws -> UInt32 {
         let reply = try port.request(ScreenProtocol.commandCheck, address: address, data: ScreenProtocol.checkData(length: length))
         guard reply.count == 9 else { throw LinkError("Unexpected reply to a region check (\(reply.count) bytes). Stopped.") }
         return ScreenProtocol.beValue(reply[5..<9])

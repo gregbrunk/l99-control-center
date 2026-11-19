@@ -10,6 +10,7 @@ let package = Package(
         // Used by the L99 Control Center app as its protocol layer.
         .library(name: "L99Core", targets: ["L99Core"]),
         .library(name: "L99Link", targets: ["L99Link"]),
+        .library(name: "L99Skins", targets: ["L99Skins"]),
     ],
     targets: [
         // Pure packet building and checksums. No device access, fully unit-tested.
@@ -21,8 +22,12 @@ let package = Package(
         .target(name: "L99USB", linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("CoreFoundation")]),
         // Device access: the screen's serial port, the wired keyboard and the dongle (IOKit).
         .target(name: "L99Link", dependencies: ["L99Core", "L99USB"]),
+        // The skin maker: six styles' artwork (drawn with the bundled open-licence fonts) and the
+        // builder that turns a style choice per section into one interface file. Optimised for the
+        // same reason as L99Core (whole-page rendering and compression).
+        .target(name: "L99Skins", dependencies: ["L99Core"], resources: [.copy("Fonts")], swiftSettings: [.unsafeFlags(["-O"])]),
         // Command-line tool for hardware tests, on top of L99Link.
-        .executableTarget(name: "l99probe", dependencies: ["L99Core", "L99Link"]),
+        .executableTarget(name: "l99probe", dependencies: ["L99Core", "L99Link", "L99Skins"]),
         .testTarget(name: "L99CoreTests", dependencies: ["L99Core"]),
     ]
 )

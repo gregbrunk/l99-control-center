@@ -353,6 +353,44 @@ Record ids repeat on a page (two id-7 records on Home), so the writer finds an i
 - Free runs: 481–495 (the only one with ≥14), 541–549, 450–456, 458–463, 466–471, 514–519, 371–376, 555–559, plus shorter ones.
 - So with confirmed-free slots: one complete extra copy, plus about one more that shares the digits. Decoding the other record types (`d` 1/5/8/11/16, `t` 0x8003–0xC00B) would confirm more slots.
 
+## Mixed skin from the skin maker (Nov 19, step 3): PROVEN [HW]
+
+Built with `l99probe skin-file mix` (library `L99Skins`, fonts Inter and JetBrains Mono, both SIL OFL) and installed three times with `isp-flash --direct` (≈262 s each, every read-back matched). Test mix: Home Midnight LED (Photos and Touchpad hidden), Play Liquid Glass Night, Real-time Data Ember, Numpad Cyberpunk, Calculator Ceramic, top bar Cyberpunk. Final result (Alison): "Looks right".
+
+**What's proven:**
+- Any style on any page, built from per-page choices in one file, starting from stock every time. The builder refuses a build that would use a slot something else needs.
+- **Play (page 18):** re-laid out. Play/pause is a toggle record (touch type `0xC003`, 24 bytes, rectangle in the first 4 words) plus a 2-state icon (210/211). Previous/next are touch buttons (codes 32/33) whose up images (208/209) are drawn; volume is codes 34–36. Title 206 and volume pill 207 are hidden behind the 1×1 blank.
+- **The visualiser is a fixed black box** drawn by the control program: full width, from about y 300 to the bottom. It can't be moved. Play art is black from y 288 down, so its edge doesn't show. The bars only move while the Mac streams music levels.
+- **Timer pages (2 work, 3 rest)** replace Home while a timer runs. They hold the top bar, Home's app-grid record (icon 0), the countdown (type 16, drawn by the screen in white at 162,408), the timer pill (561/562) and a stop touch (`0xF121` goto 1, or 32 goto 1), and they don't clear the screen. Fix: the grid record shows Home's picture (moved to the front), and the pills become the bar in the page's style.
+- **Calculator result (type 1 text, 24 bytes):** `variable, ?, x1, y1, x2, y2, font w, font h, …`; right-aligned in its box. **Colour is bytes 20–21** (RGB565; stock 0xFFFF white). Bytes 17–18 (stock 0xD69A) did not change the colour. The box can be moved.
+- **Numpad (21):** full background, 17 keys as background crops (up) and pressed render crops (down); title 318 hidden.
+- **Real-time Data:** the date/weekday glyphs (227–247) are shared with page 11's clock, so the skin draws its own 21-icon run (digits, 4 "/", Sun–Sat, English in both banks) in free slots 378–398. The spare CPU number shows the day's high (0x0102) beside the weather icon. Right-aligned numbers need room for three digits (100).
+- **Icon slots:** 120 empty slots are free even by the strictest count (every word of an undecoded record treated as a possible icon). Those blocked only by coordinate-looking words were checked by hand. **Slot 368 is avoided:** page 0's type-5 record mentions it.
+- **Media buttons over the cable:** the screen's media buttons (Home and Play) did nothing on the cable but worked on the dongle with the same skin. The skin only moves touch areas, so this is the keyboard's cable behaviour. Not yet compared with stock.
+
+## Three pages in three styles (Nov 19, step-2 test): PROVEN [HW]
+
+Built with `l99probe skin-file step2-test --art <folder>` from art exported by the mockup renderer, on top of the custom Numpad and top bar. Installed three times with `isp-flash --direct` (≈262 s each, every read-back matched). Final result (Alison, video): "Works fantastic".
+
+**What's proven:**
+- **Full-page backgrounds** through the page-background table (header pair 8/9: offset `0x5C008E`, 30 entries, one 12-byte descriptor per page, like an icon's). The stock Real-time Data page already uses one. Earlier notes calling these "all empty" were wrong: 12 pages have entries.
+  - **They must be LT-compressed (format 3).** A raw RGB565 entry (format 1) isn't drawn as a page, but widgets still repaint their own patches from it (the "blue boxes" in the first try).
+  - **LT format** (our decode; `LTImage.swift`): `"LT", w u16, h u16, chunks u8, 3, total length u32`, then per chunk `u32 (length | mode<<24)` + a 256-colour RGB565 palette, then the chunks' data. Chunks cut the pixel stream at 256 distinct colours; mode 1 = run-length pairs `(count−1, index)`, mode 0 = raw indices. **Lossless.** Re-encoding the stock images gives 7 of 10 byte-identical, and all 10 decode back exactly. Our pages took 3–56 chunks (limit 255).
+  - Dynamic widgets (clock, numbers, state icons, bars) redraw cleanly over the background.
+- **Home (page 1) ignores the background table.** It shows the wallpaper picked in Screen customisations → Background and doesn't clear the screen otherwise, so leftovers from the previous page show. Fix used: a full-screen RGB565 image as a type-3 record, moved to the front of the page's draw order (same record list length, new order), plus the table copy so top-bar widgets repaint their patches from the same picture. **Reordering a page's display records works.**
+- **RGB565 (format 0) art works for touch-button images**, not only static icons. Calculator keys are opaque crops of the background (up) and of a pressed render (down): seamless, and the pressed state works.
+- **Calculator (Cyberpunk):** background, 18 re-laid-out keys, title and back arrow drawn in the background (their records point at a 1×1 transparent icon). The result text (type 1) draws cleanly over the dark display box.
+- **Real-time Data (Glass Night):**
+  - Digit sets used only by this page (213–226, 260–269, 280–289) restyled in place at new sizes.
+  - Clock record formats: **4 = HH:MM:SS** (large clock), **1 = YYYY/MM/DD**, 7 = weekday (art per language bank), 5 = top-bar HH:MM.
+  - **Weather icon works:** a type-3 record re-bound to `0x0101` with 6 states (`first…first+5`, min 0, max 5). The condition byte accepts 0–5; our app defines the meaning.
+  - **All six states confirmed from the Mac over the dongle** (`l99probe dongle-weather-tour`, +3 layout): clear, partly cloudy, cloudy, rain, storm, snow, with humidity and air temperature updating alongside.
+  - **Progress bar (type 11, length 19)** decoded: `variable, x, y, fill icon, min u8, max u8, 3 bytes, track x, track y, track icon`. The fill is revealed in proportion to the value. Re-binding works (`0x0102` → CPU `0x0106`), and new sizes work (116×6).
+  - Stock `0x0102` is the day high (27 in tests).
+- **Home (Ember):** Photos and Touchpad hidden (touch areas shrunk to 1×1 at (0,479)); every other tile, the two hero cards, and the volume/mute/alarm buttons re-laid out and working.
+- **Icon slots:** with types 1, 3, 4, 5, 6 and 11 decoded, **160 empty slots** are unreferenced, including runs 365–399 and 436–499. (The earlier count of 80 was too cautious.)
+- Play's visualiser bars keep animating for a moment after leaving Play and can briefly draw over the next page.
+
 ## Mac-install test (Nov 18): screen ignores writes to the interface area [HW]
 
 The upload command `0x64` at `0x00760000` (block `0x3B`, Numpad art) gets no reply at all, on two tries. The photo slot right afterwards takes 151/151 writes with matching CRCs. **Interface-file changes (skins, layouts) install only through AULA's Windows tool.** Details are in MAC_INSTALL_TEST.md. This answers the "upload address = file offset" hypothesis in the screen catalog section: the addresses match, but the firmware only accepts writes into its slots.

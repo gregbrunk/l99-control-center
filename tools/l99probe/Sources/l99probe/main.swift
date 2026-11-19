@@ -51,6 +51,8 @@ usage: l99probe <command> [options]
   dongle-clock                  Clock-only packet in the prior-art layout (ACKed on the L99 per gavindi)
   dongle-stats plus3|plus4      Clock + test stats in one of the two candidate dongle layouts
   dongle-music                  Music sweep over the dongle (cmd 0x0B, from AULA's driver); --seconds N
+  dongle-weather-tour           Clock + weather condition 0–5 in turn (+3 layout), 4 s each, for filming the
+                                Real-time Data page's weather icon
   dongle-music-tour             Plays every music style value in turn (fore 0–9, then back 0–9), 4 s each with 2 s gaps, for filming
 
 options:
@@ -242,6 +244,27 @@ func dongleMusic() throws {
 /// Maps the music packet's two style bytes: every value in turn, each a 4-second sweep, separated
 /// by 2 seconds of nothing (the keys fall back to normal lighting, which marks the gaps on video).
 /// Only the volatile music packet; nothing is saved on the keyboard.
+/// Steps the weather condition through 0–5 (our icon order: clear, partly cloudy, cloudy, rain, storm,
+/// snow), with the humidity set to the same number × 10 so each step is easy to match on film.
+func dongleWeatherTour() throws {
+    let names = ["clear", "partly cloudy", "cloudy", "rain", "storm", "snow"]
+    if dryRun {
+        for k in 0..<6 { var r = now(); r.condition = k; print(k, try DongleProtocol.clock(r, layout: .plus3).hex) }
+        return
+    }
+    let d = try Dongle(); d.verbose = verbose
+    print("Open the Real-time Data page. Stepping the weather condition 0–5, 4 s each…")
+    for k in 0..<6 {
+        var r = now(); r.condition = k; r.humidity = k * 10; r.cpuLoad = 0; r.gpuLoad = 0; r.airTemp = 20 + k
+        let reply = try d.transact(try DongleProtocol.clock(r, layout: .plus3))
+        print("  \(k) \(names[k]) (humidity \(k * 10)%, \(20 + k) °C)\(reply == nil ? " — no reply" : "")")
+        Thread.sleep(forTimeInterval: 4)
+    }
+    var r = now(); r.condition = 0
+    _ = try d.transact(try DongleProtocol.clock(r, layout: .plus3))
+    print("Done; back to clear. The screen keeps these values until the app sends real ones.")
+}
+
 func dongleMusicTour() throws {
     func frame(_ t: Double) -> [Double] { (0..<DongleProtocol.musicBands).map { i in 0.45 + 0.4 * sin(t * 6 + Double(i) * 0.45) } }
     var plan = [(label: String, fore: UInt8, back: UInt8)]()
@@ -422,7 +445,13 @@ func skinFile() throws {
     case "blue-1": try skinBlue1()
     case "layout-test": try skinLayoutTest()
     case "topbar-test": try skinTopBarTest()
-    default: throw LinkError("skin-file needs: blue-1, layout-test or topbar-test")
+    case "step2-test": try skinStep2Test()
+    case "preview": try skinPreviewAll()
+    case "dump": try skinDump()
+    case "icons": try skinIconStrip()
+    case "free-slots": try skinFreeSlots()
+    case "mix": try skinMix()
+    default: throw LinkError("skin-file needs: blue-1, layout-test, topbar-test or step2-test")
     }
 }
 
@@ -466,11 +495,19 @@ func skinTopBarTest() throws {
     let out = option("--out") ?? projectRoot.appendingPathComponent("build/UartTFT-II_Flash-topbar-test.bin").path
     var file = try InterfaceFile(stockFile: factoryFile)
     try applyLayoutTest(&file)
-    let page = 22
+    try placeTopBarArt(&file)
+    try applyTopBar(&file, page: 22)
+    try save(file, to: out)
+}
+
+/// Top-bar art slots (Ember style), shared by every page that uses the custom bar.
+/// Clock and battery % share one digit set: 481–490 digits, 491–494 the clock's colon frames.
+let topBarSlots = (digits: 481, colons: 491, connection: 541, num: 497, battery: 450, caps: 458, lock: 460, os: 462, percent: 466)
+
+func placeTopBarArt(_ file: inout InterfaceFile) throws {
+    let slots = topBarSlots
     let free = Set(try file.emptySlots())
     // Empty slots that no record refers to (checked against the catalog), in runs as the records need them.
-    // Clock and battery % share one digit set: 481–490 digits, 491–494 the clock's colon frames.
-    let slots = (digits: 481, colons: 491, connection: 541, num: 497, battery: 450, caps: 458, lock: 460, os: 462, percent: 466)
     for id in Array(481...494) + [497, 498] + Array(541...545) + Array(450...456) + Array(458...463) + [466] where !free.contains(id) {
         throw LinkError("Icon slot \(id) isn't empty. Stopped.")
     }
@@ -491,8 +528,15 @@ func skinTopBarTest() throws {
     for d in 0..<10 { try place(slots.digits + d, A.digitW, A.digitH, A.digit(d)) }
     for k in 0..<4 { try place(slots.colons + k, A.digitW, A.digitH, A.colon()) }
     try place(slots.percent, A.pctW, A.digitH, A.percent())
-    // Layout: clock, connection, chips on the left; battery % and cell on the right.
-    try file.setClock(page: page, x: 12, y: 10, first: slots.digits)
+}
+
+/// Points one page's top-bar records at the custom art: clock, connection, chips on the left;
+/// battery % and cell on the right.
+func applyTopBar(_ file: inout InterfaceFile, page: Int) throws {
+    let slots = topBarSlots
+    typealias A = TopBarArt
+    let capsW = A.chipWidth(["Caps"]), lockW = 22
+    try file.setClock(page: page, format: 5, x: 12, y: 10, first: slots.digits)
     try file.setIndicator(page: page, using: 9, x: 58, y: 8, first: slots.connection)
     try file.setIndicator(page: page, using: 1, x: 0, y: 0, first: slots.num)
     var x = 110
@@ -502,7 +546,6 @@ func skinTopBarTest() throws {
     try file.setDigits(page: page, variable: 6, x: 268, y: 10, first: slots.digits)
     try file.setIndicator(page: page, using: 21, x: 269, y: 10, first: slots.percent)
     try file.setIndicator(page: page, using: 14, x: 283, y: 10, first: slots.battery)
-    try save(file, to: out)
 }
 
 func save(_ file: InterfaceFile, to out: String) throws {
@@ -646,6 +689,7 @@ do {
         try dongleClock(layout, stats: true)
     case "dongle-music": try dongleMusic()
     case "dongle-music-tour": try dongleMusicTour()
+    case "dongle-weather-tour": try dongleWeatherTour()
     case "-h", "--help", "help": print(usage)
     default: print(usage); exit(2)
     }

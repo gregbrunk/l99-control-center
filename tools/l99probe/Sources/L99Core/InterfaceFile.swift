@@ -128,27 +128,69 @@ public struct InterfaceFile {
     /// Gives an icon new ARGB4444 art at any size. The pixels go after the project's end (which is
     /// extended to cover them) and the icon's descriptor is pointed at them in both banks. The old
     /// pixels stay where they were, unreferenced. Refused if the two banks' descriptors differ.
-    public mutating func placeIcon(_ id: Int, width: Int, height: Int, pixels new: [UInt16]) throws {
-        guard width > 0, height > 0, width <= 320, height <= 480, new.count == width * height else {
-            throw Failure.refused("Icon \(id): \(width)×\(height) needs \(width * height) pixels, got \(new.count)")
-        }
-        let b0 = try icon(id, bank: 0), b1 = try icon(id, bank: 1)
-        guard b0 == b1 else { throw Failure.refused("Icon \(id) differs between the language banks; not relocating") }
-        let start = (projectEnd + 3) & ~3, size = new.count * 2
-        guard start + size <= Self.paddingEnd else { throw Failure.refused("No room left for icon \(id)") }
+    public static let formatRGB565 = 0, formatARGB4444 = 2
+
+    /// Appends bytes after the project's end (extending it) and returns where they went.
+    mutating func appendBytes(_ new: [UInt8], what: String) throws -> Int {
+        let start = (projectEnd + 3) & ~3, size = new.count
+        guard start + size <= Self.paddingEnd else { throw Failure.refused("No room left for \(what)") }
         guard bytes[start..<(start + size)].allSatisfy({ $0 == 0 }) else {
             throw Failure.refused(String(format: "Space at 0x%08X isn't empty padding. Stopped.", start))
         }
-        for (i, v) in new.enumerated() { put16(start + 2 * i, Int(v)) }
+        bytes.replaceSubrange(start..<(start + size), with: new)
         allowed.append(start..<(start + size))
-        for bank in 0...1 {
-            let o = descriptorOffset(id, bank: bank)
-            put32(o, start); put16(o + 4, width); put16(o + 6, height); put32(o + 8, size | 2 << 24)
-            allowed.append(o..<(o + 12))
-        }
         put32(Self.projectSizeOffset, start + size)
         allowed.append(Self.projectSizeOffset..<(Self.projectSizeOffset + 4))
-        log.append(String(format: "icon %d: new %d×%d art at 0x%08X (%d bytes), both banks", id, width, height, start, size))
+        return start
+    }
+
+    /// Appends 16-bit pixels (little-endian) after the project's end.
+    mutating func appendArt(_ new: [UInt16], what: String) throws -> Int {
+        try appendBytes(new.flatMap { [UInt8($0 & 0xFF), UInt8($0 >> 8)] }, what: what)
+    }
+
+    /// Gives an icon new art at any size: ARGB4444 (format 2, default) or opaque RGB565 (format 0).
+    /// The pixels go after the project's end (which is extended to cover them) and the icon's
+    /// descriptor is pointed at them in both banks. The old pixels stay where they were, unreferenced.
+    /// Refused if the two banks' descriptors differ.
+    public mutating func placeIcon(_ id: Int, width: Int, height: Int, pixels new: [UInt16], format: Int = formatARGB4444) throws {
+        guard width > 0, height > 0, width <= 320, height <= 480, new.count == width * height else {
+            throw Failure.refused("Icon \(id): \(width)×\(height) needs \(width * height) pixels, got \(new.count)")
+        }
+        guard format == Self.formatRGB565 || format == Self.formatARGB4444 else { throw Failure.refused("Icon \(id): format \(format) isn't supported") }
+        let b0 = try icon(id, bank: 0), b1 = try icon(id, bank: 1)
+        guard b0 == b1 else { throw Failure.refused("Icon \(id) differs between the language banks; not relocating") }
+        let size = new.count * 2
+        let start = try appendArt(new, what: "icon \(id)")
+        for bank in 0...1 {
+            let o = descriptorOffset(id, bank: bank)
+            put32(o, start); put16(o + 4, width); put16(o + 6, height); put32(o + 8, size | format << 24)
+            allowed.append(o..<(o + 12))
+        }
+        log.append(String(format: "icon %d: new %d×%d %@ art at 0x%08X (%d bytes), both banks", id, width, height,
+                          format == 0 ? "RGB565" : "ARGB4444", start, size))
+    }
+
+    // MARK: Page backgrounds
+
+    /// The page-background table: 30 descriptors (one per page, 12 bytes like an icon's), from the header.
+    public var backgroundTable: Int { Int(Self.u32(stock, 8 * 4)) }
+
+    /// Gives a page a full-screen background, stored in the screen's LT container (format 3) like the
+    /// stock ones. Raw RGB565 entries aren't drawn as a page (tested on hardware, Nov 19), although
+    /// widgets do read their patch of it.
+    public mutating func setBackground(page: Int, pixels new: [UInt16]) throws {
+        guard (0..<Self.pageCount).contains(page) else { throw Failure.refused("No page \(page)") }
+        guard Int(Self.u32(stock, 9 * 4)) == Self.pageCount else { throw Failure.refused("The background table isn't 30 entries. Stopped.") }
+        guard new.count == 320 * 480 else { throw Failure.refused("A background needs 320×480 pixels, got \(new.count)") }
+        let lt = try LTImage.encode(new, width: 320, height: 480)
+        guard try LTImage.decode(lt).pixels == new else { throw Failure.refused("LT round trip failed. Stopped.") }
+        let padded = lt.count % 2 == 0 ? lt : lt + [0]
+        let start = try appendBytes(padded, what: "page \(page)'s background")
+        let o = backgroundTable + page * 12
+        put32(o, start); put16(o + 4, 320); put16(o + 6, 480); put32(o + 8, padded.count | 3 << 24)
+        allowed.append(o..<(o + 12))
+        log.append(String(format: "page %d background: 320×480 LT (%d chunks, %d bytes) at 0x%08X", page, Int(lt[6]), lt.count, start))
     }
 
     // MARK: Pages and touch buttons
@@ -172,10 +214,10 @@ public struct InterfaceFile {
 
     /// Moves and resizes the touch button with this action code on a page. Only the rectangle changes;
     /// the action, images and goto stay. The image is drawn at (x, y); keep w×h equal to its size.
-    public mutating func moveButton(page: Int, code: Int, x: Int, y: Int, width: Int, height: Int) throws {
-        let matches = try touchButtons(page: page).filter { $0.code == code }
+    public mutating func moveButton(page: Int, code: Int, goto: Int? = nil, x: Int, y: Int, width: Int, height: Int) throws {
+        let matches = try touchButtons(page: page).filter { $0.code == code && (goto == nil || $0.goto == goto) }
         guard matches.count == 1, let b = matches.first else {
-            throw Failure.refused("Page \(page) has \(try touchButtons(page: page).filter { $0.code == code }.count) buttons with code \(code); expected 1")
+            throw Failure.refused("Page \(page) has \(matches.count) buttons with code \(code)\(goto.map { " goto \($0)" } ?? ""); expected 1")
         }
         guard x >= 0, y >= 0, width > 0, height > 0, x + width <= 320, y + height <= 480 else {
             throw Failure.refused("Button \(code): \(width)×\(height) at (\(x), \(y)) is off the 320×480 screen")
@@ -238,9 +280,12 @@ public struct InterfaceFile {
     /// Moves a page's state icon (found by the first icon it uses now, which is unique; ids repeat)
     /// and points it at new icons, keeping the same number of states.
     /// Only this page changes, so other pages keep the shared stock icons.
-    public mutating func setIndicator(page: Int, using current: Int, x: Int, y: Int, first: Int) throws {
+    public mutating func setIndicator(page: Int, using current: Int, occurrence: Int? = nil, x: Int, y: Int, first: Int) throws {
         let all = try indicators(page: page).filter { $0.first == current }
-        guard all.count == 1, let r = all.first else { throw Failure.refused("Page \(page) has \(all.count) indicators using icon \(current); expected 1") }
+        guard occurrence != nil || all.count == 1, all.indices.contains(occurrence ?? 0) else {
+            throw Failure.refused("Page \(page) has \(all.count) indicators using icon \(current); expected 1 or a valid occurrence")
+        }
+        let r = all[occurrence ?? 0]
         let id = r.id
         let n = r.last - r.first, last = first + n
         guard x >= 0, y >= 0, x < 320, y < 480 else { throw Failure.refused("Indicator \(id): (\(x), \(y)) is off screen") }
@@ -253,15 +298,21 @@ public struct InterfaceFile {
     }
 
     /// Moves a page's digit widget for `variable` and points it at ten new digit icons (0…9).
-    public mutating func setDigits(page: Int, variable: Int, x: Int, y: Int, first: Int) throws {
+    /// `occurrence` picks one of several identical widgets (the stock Data page has two for CPU);
+    /// `newVariable` re-binds it to another value.
+    public mutating func setDigits(page: Int, variable: Int, occurrence: Int? = nil, newVariable: Int? = nil, x: Int, y: Int, first: Int) throws {
         let all = try digitWidgets(page: page).filter { $0.variable == variable }
-        guard all.count == 1, let r = all.first else { throw Failure.refused("Page \(page) has \(all.count) digit widgets for 0x\(String(variable, radix: 16)); expected 1") }
+        guard occurrence != nil || all.count == 1, all.indices.contains(occurrence ?? 0) else {
+            throw Failure.refused("Page \(page) has \(all.count) digit widgets for 0x\(String(variable, radix: 16)); expected 1 or a valid occurrence")
+        }
+        let r = all[occurrence ?? 0]
+        if let v = newVariable { put16(r.offset, v); allowed.append(r.offset..<(r.offset + 2)) }
         guard r.last - r.first == 9 else { throw Failure.refused("Digit widget 0x\(String(variable, radix: 16)) doesn't use ten icons; not changing it") }
         guard x > 0, y >= 0, x < 320, y < 480 else { throw Failure.refused("Digits: (\(x), \(y)) is off screen") }
         try checkHasArt(first...(first + 9))
         put16(r.offset + 3, x); put16(r.offset + 5, y); put16(r.offset + 10, first); put16(r.offset + 12, first + 9)
         allowed.append((r.offset + 3)..<(r.offset + 7)); allowed.append((r.offset + 10)..<(r.offset + 14))
-        log.append("page \(page) digits 0x\(String(variable, radix: 16)): icons \(r.first)–\(r.last) right edge (\(r.x),\(r.y)) → \(first)–\(first + 9) at (\(x),\(y))")
+        log.append("page \(page) digits 0x\(String(variable, radix: 16))\(newVariable.map { " → 0x" + String($0, radix: 16) } ?? ""): icons \(r.first)–\(r.last) right edge (\(r.x),\(r.y)) → \(first)–\(first + 9) at (\(x),\(y))")
     }
 
     /// The top-bar clock (type 6): `x u16, y u16, first icon u16, last icon u16, glyphs u8`.
@@ -276,15 +327,75 @@ public struct InterfaceFile {
     }
 
     /// Moves a page's clock and points it at a new run of icons (same count as now).
-    public mutating func setClock(page: Int, x: Int, y: Int, first: Int) throws {
-        let all = try clocks(page: page)
-        guard all.count == 1, let r = all.first else { throw Failure.refused("Page \(page) has \(all.count) clocks; expected 1") }
+    /// With several clocks on a page (the Data page has time, date and weekday), `format` picks one by
+    /// its last byte (5 top-bar HH:MM, 4 large HH:MM, 1 date, 7 weekday).
+    public mutating func setClock(page: Int, format: Int? = nil, x: Int, y: Int, first: Int) throws {
+        let all = try clocks(page: page).filter { format == nil || $0.glyphs == format }
+        guard all.count == 1, let r = all.first else { throw Failure.refused("Page \(page) has \(all.count) matching clocks; expected 1") }
         guard x >= 0, y >= 0, x < 320, y < 480 else { throw Failure.refused("Clock: (\(x), \(y)) is off screen") }
         let last = first + (r.last - r.first)
-        try checkHasArt(first...last)
+        if first != r.first { try checkHasArt(first...last) }   // moving only: the art stays as it is
         put16(r.offset, x); put16(r.offset + 2, y); put16(r.offset + 4, first); put16(r.offset + 6, last)
         allowed.append(r.offset..<(r.offset + 8))
         log.append("page \(page) clock: icons \(r.first)–\(r.last) at (\(r.x),\(r.y)) → \(first)–\(last) at (\(x),\(y))")
+    }
+
+    /// Moves one state-icon record (found by its first icon) to the front of the page's display list,
+    /// so the screen draws it first, under everything else. The list keeps its length; only the order changes.
+    public mutating func moveIndicatorToFront(page: Int, using current: Int) throws {
+        let recs = try displayRecords(page: page)
+        let hits = recs.filter { $0.type == 3 && $0.length == 14 && Self.u16(bytes, $0.offset + 6) == current }
+        guard hits.count == 1, let r = hits.first else { throw Failure.refused("Page \(page) has \(hits.count) indicators using icon \(current); expected 1") }
+        let e = pageTable + page * 12, start = Int(Self.u32(bytes, e)), len = Self.u16(bytes, e + 4)
+        let recStart = r.offset - 5, recEnd = r.offset + r.length
+        var region = Array(bytes[start..<(start + len)])
+        let rec = Array(region[(recStart - start)..<(recEnd - start)])
+        region.removeSubrange((recStart - start)..<(recEnd - start))
+        region.insert(contentsOf: rec, at: 0)
+        bytes.replaceSubrange(start..<(start + len), with: region)
+        allowed.append(start..<(start + len))
+        guard try displayRecords(page: page).count == recs.count else { throw Failure.refused("Page \(page)'s records don't add up after reordering. Stopped.") }
+        log.append("page \(page): record using icon \(current) moved to the front of the draw order")
+    }
+
+    /// Re-binds a page's state icon (found by its current first icon) to a variable: the screen shows
+    /// icon `first + value` for values 0…count−1 (as the battery does with 7 states).
+    public mutating func setStateIcon(page: Int, using current: Int, variable: Int, x: Int, y: Int, first: Int, count: Int) throws {
+        let all = try indicators(page: page).filter { $0.first == current }
+        guard all.count == 1, let r = all.first else { throw Failure.refused("Page \(page) has \(all.count) indicators using icon \(current); expected 1") }
+        guard count >= 1, x >= 0, y >= 0, x < 320, y < 480 else { throw Failure.refused("State icon: bad position or count") }
+        try checkHasArt(first...(first + count - 1))
+        put16(r.offset, variable); put16(r.offset + 2, x); put16(r.offset + 4, y); put16(r.offset + 6, first)
+        put16(r.offset + 8, count == 1 ? 0xFFFF : first + count - 1); put16(r.offset + 10, 0); put16(r.offset + 12, count - 1)
+        allowed.append(r.offset..<(r.offset + 14))
+        log.append("page \(page) state icon (was \(r.first)) → variable 0x\(String(variable, radix: 16)), icons \(first)–\(first + count - 1) at (\(x),\(y))")
+    }
+
+    /// A progress bar (type 11, length 19): `variable, x, y, fill icon, min u8, max u8, 3 bytes,
+    /// track x, track y, track icon`. The fill is revealed in proportion to the value.
+    public struct ProgressBar: Equatable, Sendable { public let offset: Int, variable: Int, x: Int, y: Int, fill: Int, min: Int, max: Int, trackX: Int, trackY: Int, track: Int }
+
+    public func progressBars(page: Int) throws -> [ProgressBar] {
+        try displayRecords(page: page).filter { $0.type == 11 && $0.length == 19 }.map { r in
+            let o = r.offset
+            return ProgressBar(offset: o, variable: Self.u16(bytes, o), x: Self.u16(bytes, o + 2), y: Self.u16(bytes, o + 4), fill: Self.u16(bytes, o + 6),
+                               min: Int(bytes[o + 8]), max: Int(bytes[o + 9]), trackX: Self.u16(bytes, o + 13), trackY: Self.u16(bytes, o + 15), track: Self.u16(bytes, o + 17))
+        }
+    }
+
+    /// Moves a bar (found by its current variable), optionally re-binds it, and keeps its own icons
+    /// (restyle those with placeIcon). The track is drawn at (trackX, trackY).
+    public mutating func setProgressBar(page: Int, variable: Int, newVariable: Int? = nil, x: Int, y: Int, trackX: Int, trackY: Int, max: Int) throws {
+        let all = try progressBars(page: page).filter { $0.variable == variable }
+        guard all.count == 1, let r = all.first else { throw Failure.refused("Page \(page) has \(all.count) bars for 0x\(String(variable, radix: 16)); expected 1") }
+        guard (1...255).contains(max), x >= 0, y >= 0, x < 320, y < 480, trackX >= 0, trackY >= 0, trackX < 320, trackY < 480 else {
+            throw Failure.refused("Bar: bad position or range")
+        }
+        let o = r.offset
+        put16(o, newVariable ?? variable); put16(o + 2, x); put16(o + 4, y); bytes[o + 9] = UInt8(max)
+        put16(o + 13, trackX); put16(o + 15, trackY)
+        allowed.append(o..<(o + 6)); allowed.append((o + 9)..<(o + 10)); allowed.append((o + 13)..<(o + 17))
+        log.append("page \(page) bar 0x\(String(variable, radix: 16))\(newVariable.map { " → 0x" + String($0, radix: 16) } ?? ""): (\(r.x),\(r.y)) → (\(x),\(y)), track (\(trackX),\(trackY)), max \(max)")
     }
 
     /// Icon slots with no art (0×0) in both banks. Whether a record still refers to one is the caller's check.
@@ -293,6 +404,109 @@ public struct InterfaceFile {
             let a = try icon(id, bank: 0), b = try icon(id, bank: 1)
             return a.width == 0 && a.height == 0 && a.size == 0 && b == a
         }
+    }
+
+    /// Every icon id the pages may draw. Decoded record types give exact ranges (3 state icon, 4 digits,
+    /// 6 clock, 11 bar, touch-button images); for any other record every 16-bit word that could be an
+    /// icon id counts, so an undecoded record can only make the list longer, never shorter.
+    public func referencedIcons() throws -> Set<Int> {
+        var refs = Set<Int>()
+        func word(_ o: Int) -> Int { Self.u16(bytes, o) }
+        func range(_ a: Int, _ b: Int) { guard a != 0xFFFF, a < iconCount else { return }; let b = b == 0xFFFF ? a : b; if b >= a, b < iconCount { refs.formUnion(a...b) } else { refs.insert(a) } }
+        func everyWord(_ o: Int, _ len: Int) { for k in 0..<len - 1 { let v = word(o + k); if v < iconCount { refs.insert(v) } } }
+        for page in 0..<Self.pageCount {
+            for r in try displayRecords(page: page) {
+                switch (r.type, r.length) {
+                case (3, 14): range(word(r.offset + 6), word(r.offset + 8))
+                case (4, 14): range(word(r.offset + 10), word(r.offset + 12))
+                case (6, 9): range(word(r.offset + 4), word(r.offset + 6))
+                case (11, 19): range(word(r.offset + 6), word(r.offset + 6)); range(word(r.offset + 17), word(r.offset + 17))
+                default: everyWord(r.offset, r.length)
+                }
+            }
+            let e = pageTable + page * 12
+            var p = Int(Self.u32(bytes, e + 6)); let end = p + Self.u16(bytes, e + 10)
+            while p < end {
+                let type = word(p), len = Int(bytes[p + 2] & 0x7F), pay = p + 3
+                if type & 0x3FFF == 1 && len == 16 { range(word(pay + 10), word(pay + 10)); range(word(pay + 12), word(pay + 12)) }
+                else { everyWord(pay, len) }
+                p = pay + len
+            }
+        }
+        return refs
+    }
+
+    /// Pages that draw each icon, from the decoded record types only (3, 4, 6, 11 and touch images).
+    public func decodedReferences() throws -> [Int: Set<Int>] {
+        var out = [Int: Set<Int>]()
+        func word(_ o: Int) -> Int { Self.u16(bytes, o) }
+        func add(_ a: Int, _ b: Int, _ page: Int) {
+            guard a != 0xFFFF, a < iconCount else { return }
+            let b = b == 0xFFFF || b < a || b >= iconCount ? a : b
+            for id in a...b { out[id, default: []].insert(page) }
+        }
+        for page in 0..<Self.pageCount {
+            for r in try displayRecords(page: page) {
+                switch (r.type, r.length) {
+                case (3, 14): add(word(r.offset + 6), word(r.offset + 8), page)
+                case (4, 14): add(word(r.offset + 10), word(r.offset + 12), page)
+                case (6, 9): add(word(r.offset + 4), word(r.offset + 6), page)
+                case (11, 19): add(word(r.offset + 6), 0xFFFF, page); add(word(r.offset + 17), 0xFFFF, page)
+                default: break
+                }
+            }
+            for b in try touchButtons(page: page) { add(b.up, 0xFFFF, page); add(b.down, 0xFFFF, page) }
+        }
+        return out
+    }
+
+    /// A page's text widget (type 1, 24 bytes), found by its variable. Our decode:
+    /// `variable, ?, x1, y1, x2, y2, font w u8, font h u8, ? u16, align u8, ? u16 (stock 0xD69A), ? u8, colour u16 (RGB565), …`.
+    /// The text is right-aligned in the box. Setting bytes 17–18 didn't change the colour on hardware (Nov 19), so the
+    /// colour is taken to be bytes 20–21 (stock white 0xFFFF on the Calculator); still to be confirmed.
+    func textWidget(page: Int, variable: Int) throws -> Int {
+        let recs = try displayRecords(page: page).filter { $0.type == 1 && $0.length == 24 && Self.u16(bytes, $0.offset) == variable }
+        guard recs.count == 1, let r = recs.first else { throw Failure.refused("Page \(page) has \(recs.count) text widgets on variable \(variable); expected 1") }
+        return r.offset
+    }
+
+    public mutating func setTextColor(page: Int, variable: Int, color: UInt16) throws {
+        let o = try textWidget(page: page, variable: variable) + 20, old = Self.u16(bytes, o)
+        put16(o, Int(color)); allowed.append(o..<(o + 2))
+        log.append(String(format: "page %d text 0x%04X: colour 0x%04X → 0x%04X", page, variable, old, Int(color)))
+    }
+
+    public mutating func setTextBox(page: Int, variable: Int, x1: Int, y1: Int, x2: Int, y2: Int) throws {
+        guard 0 <= x1, x1 < x2, x2 < 320, 0 <= y1, y1 < y2, y2 < 480 else { throw Failure.refused("Text box (\(x1),\(y1))–(\(x2),\(y2)) is off screen") }
+        let o = try textWidget(page: page, variable: variable)
+        let old = (0..<4).map { Self.u16(bytes, o + 4 + 2 * $0) }
+        for (k, v) in [x1, y1, x2, y2].enumerated() { put16(o + 4 + 2 * k, v) }
+        allowed.append((o + 4)..<(o + 12))
+        log.append("page \(page) text \(String(format: "0x%04X", variable)): box (\(old[0]),\(old[1]))–(\(old[2]),\(old[3])) → (\(x1),\(y1))–(\(x2),\(y2))")
+    }
+
+    /// Empty slots no page refers to: safe for new art.
+    public func freeSlots() throws -> [Int] {
+        let refs = try referencedIcons()
+        return try emptySlots().filter { !refs.contains($0) }
+    }
+
+    /// Moves a page's toggle button (touch type 0xC003, e.g. Play/pause). Only the rectangle changes.
+    public mutating func moveToggle(page: Int, x: Int, y: Int, width: Int, height: Int) throws {
+        let e = pageTable + page * 12
+        var p = Int(Self.u32(bytes, e + 6)); let end = p + Self.u16(bytes, e + 10)
+        var found: [Int] = []
+        while p < end {
+            let type = Self.u16(bytes, p), len = Int(bytes[p + 2] & 0x7F)
+            if type == 0xC003 && len == 24 { found.append(p + 3) }
+            p += 3 + len
+        }
+        guard found.count == 1, let o = found.first else { throw Failure.refused("Page \(page) has \(found.count) toggle buttons; expected 1") }
+        guard x >= 0, y >= 0, width > 0, height > 0, x + width <= 320, y + height <= 480 else { throw Failure.refused("Toggle: off screen") }
+        let old = (0..<4).map { Self.u16(bytes, o + 2 * $0) }
+        put16(o, x); put16(o + 2, y); put16(o + 4, x + width - 1); put16(o + 6, y + height - 1)
+        allowed.append(o..<(o + 8))
+        log.append("page \(page) toggle: (\(old[0]),\(old[1]))–(\(old[2]),\(old[3])) → (\(x),\(y))–(\(x + width - 1),\(y + height - 1))")
     }
 
     // MARK: Checking and saving

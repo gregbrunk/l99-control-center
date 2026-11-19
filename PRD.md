@@ -193,6 +193,8 @@ Goal: feed the Real-time Data and Play pages from the Mac, over the dongle or th
 
 Goal: make the screen look better and carry less, with every keyboard function intact.
 
+**Custom layouts are proven (Nov 19).** A fully re-laid-out Numpad, with new key sizes, positions and art, installed from the Mac and works (FINDINGS.md, "Custom layouts from the Mac"). Designs aren't limited to the stock sizes and positions, only to the screen's existing key actions.
+
 **Direction (Alison, Nov 18): themes, not hyper-specific edits.**
 - **Skins by area**, each chosen from a small set in the app:
   - home-screen icons;

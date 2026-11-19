@@ -26,9 +26,10 @@ usage: l99probe <command> [options]
                                 research"). Reads words 0x0000–0x0FFF and 0x7000–0x703F (03 reads only, never a
                                 write), before and after two stats packets with marker values, and reports where
                                 each stats field lands. Saves l99probe-memory-map.json.
-  skin-file blue-1 [--out F]    OFFLINE: build an interface file from the stock one with the Numpad "1" key tinted
-                                blue (icon 341, both banks). Proves every other byte is unchanged, saves a
-                                before/after PNG, and prints the install command. Sends nothing.
+  skin-file blue-1|layout-test  OFFLINE: build an interface file from the stock one. blue-1 tints the Numpad "1"
+            [--out F]           key blue in place; layout-test re-lays out the whole Numpad (new key sizes and
+                                positions, new art after the project). Proves every other byte is unchanged and
+                                prints the install command. Sends nothing.
   Bootloader (cable; keyboard in bootloader mode via Fn, X, 0, 6; research/ISP_PROTOCOL.md):
   isp-probe                     READ-ONLY: handshake + flash ID. Writes nothing. Checks the screen matches the capture.
                                 Use --direct (with sudo) for every isp command: the serial path is unreliable and
@@ -417,7 +418,52 @@ func uiBlockTest() throws {
 // MARK: Interface-file writer (offline)
 
 func skinFile() throws {
-    guard args.first == "blue-1" else { throw LinkError("skin-file needs: blue-1") }
+    switch args.first {
+    case "blue-1": try skinBlue1()
+    case "layout-test": try skinLayoutTest()
+    default: throw LinkError("skin-file needs: blue-1 or layout-test")
+    }
+}
+
+/// A deliberately different Numpad: a 4×4 grid of 74×70 keys plus a full-width 0, in the "soft dark"
+/// style. Proves moved/resized touch areas and new-size art stored after the project.
+func skinLayoutTest() throws {
+    let out = option("--out") ?? projectRoot.appendingPathComponent("build/UartTFT-II_Flash-layout-test.bin").path
+    try FileManager.default.createDirectory(at: URL(fileURLWithPath: out).deletingLastPathComponent(), withIntermediateDirectories: true)
+    var file = try InterfaceFile(stockFile: factoryFile)
+    let page = 21
+    let buttons = try file.touchButtons(page: page)
+    // (code, label, kind, column, row); row 4 is the full-width 0.
+    let plan: [(Int, String, SkinArt.Kind, Int, Int)] = [
+        (48, "Num", .symbol, 0, 0), (49, "/", .symbol, 1, 0), (50, "*", .symbol, 2, 0), (51, "−", .symbol, 3, 0),
+        (52, "7", .number, 0, 1), (53, "8", .number, 1, 1), (54, "9", .number, 2, 1), (55, "+", .symbol, 3, 1),
+        (56, "4", .number, 0, 2), (57, "5", .number, 1, 2), (58, "6", .number, 2, 2), (64, "Del", .symbol, 3, 2),
+        (59, "1", .number, 0, 3), (60, "2", .number, 1, 3), (61, "3", .number, 2, 3), (62, "Enter", .accent, 3, 3),
+        (63, "0", .number, 0, 4),
+    ]
+    guard Set(plan.map(\.0)) == Set(buttons.filter { (48...64).contains($0.code) }.map(\.code)) else {
+        throw LinkError("The Numpad's key codes aren't the 17 expected. Stopped.")
+    }
+    for (code, label, kind, col, row) in plan {
+        let b = buttons.first { $0.code == code }!
+        let (x, y, w, h) = row == 4 ? (3, 404, 314, 70) : (3 + col * 80, 100 + row * 76, 74, 70)
+        try file.moveButton(page: page, code: code, x: x, y: y, width: w, height: h)
+        for (id, pressed) in [(b.up, false), (b.down, true)] {
+            try file.placeIcon(id, width: w, height: h,
+                               pixels: SkinArt.key(label, kind: kind, pressed: pressed, width: w, height: h, style: SkinArt.softDark))
+        }
+    }
+    let crc = try file.write(to: out)
+    for line in file.log { print("  " + line) }
+    let changed = file.changedRanges().reduce(0) { $0 + $1.count }
+    print(String(format: "Project end 0x%08X → 0x%08X. %d bytes changed, all inside the planned edits.",
+                 InterfaceFile.artRange.upperBound, file.projectEnd, changed))
+    print("Size \(file.bytes.count) (unchanged), CRC32 \(String(format: "%08X", crc)).")
+    print("Saved: \(out)")
+    print("Install (bootloader mode, cable): sudo \(CommandLine.arguments[0]) isp-flash \"\(out)\" --direct")
+}
+
+func skinBlue1() throws {
     let out = option("--out") ?? projectRoot.appendingPathComponent("build/UartTFT-II_Flash-blue-1.bin").path
     try FileManager.default.createDirectory(at: URL(fileURLWithPath: out).deletingLastPathComponent(), withIntermediateDirectories: true)
     var file = try InterfaceFile(stockFile: factoryFile)

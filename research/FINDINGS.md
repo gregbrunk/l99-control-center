@@ -305,6 +305,22 @@ Other facts:
 - The active art for the user-visible areas sits between `0x625000` and `0x940000`. The page and touch records sit in `0x21DD0`–`0x251A5`.
 - **The upload command's address is the file offset.** Photo uploads write at `0x041E0000`, the same offset as the photo in the file. So the Mac upload command `0x64` might be able to rewrite single 128 KiB blocks of the interface art directly, which would install a skin without Windows. **Untested.** Open questions: does the screen accept `0x64` below `0x04000000`; does it erase and rewrite partial blocks correctly; does it cache art until a power cycle. Recovery from a bad write needs the Windows ISP tool, so this waits until the Windows restore test has passed.
 
+## Custom layouts from the Mac (Nov 19): PROVEN [HW]
+
+Built with `l99probe skin-file layout-test` and installed with `isp-flash --direct` (260 s, every read-back report matched).
+- **What changed:**
+  - The Numpad (page 21) was re-laid out: a 4×4 grid of 74×70 keys plus a 314×70 full-width 0. **+** and **Enter** became normal-size keys, and **Del** moved up beside 6.
+  - Only the 17 touch rectangles changed. Action codes 48–64 and icon numbers stayed the same.
+  - 34 new images were drawn on the Mac in the "soft dark" style.
+  - **New art went after the active project.** It sits in the zero padding from `0xA355EC` (inside the file, below `0x04000000`). The 34 descriptors point there in both banks, and the project size at `0x174` was raised to `0xA9BC5C`.
+  - Every other byte is stock. An independent render shows only page 21 differs.
+- **Result (Alison):** the art shows as previewed and the pressed state works. Every key types the right thing at its new position: 0–9, `/ * − +`, Del (`.` with Num Lock on) and Enter.
+- **So:**
+  - Touch areas are read from the records, with no hidden copy elsewhere.
+  - Icons can be any size.
+  - Art beyond the stock project end is read, once the size field covers it.
+  - **Layouts are open, within the screen's existing key actions.** Adding or removing records (changing a page's record length) is still untested.
+
 ## Mac-install test (Nov 18): screen ignores writes to the interface area [HW]
 
 The upload command `0x64` at `0x00760000` (block `0x3B`, Numpad art) gets no reply at all, on two tries. The photo slot right afterwards takes 151/151 writes with matching CRCs. **Interface-file changes (skins, layouts) install only through AULA's Windows tool.** Details are in MAC_INSTALL_TEST.md. This answers the "upload address = file offset" hypothesis in the screen catalog section: the addresses match, but the firmware only accepts writes into its slots.

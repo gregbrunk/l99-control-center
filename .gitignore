@@ -11,3 +11,7 @@ research/*
 !research/SMOKE_TEST.md
 !research/Salamor_issue3.md
 !research/notes/
+!research/ISP_PROTOCOL.md
+
+# Built interface files (127 MB each)
+build/

@@ -26,6 +26,9 @@ usage: l99probe <command> [options]
                                 research"). Reads words 0x0000–0x0FFF and 0x7000–0x703F (03 reads only, never a
                                 write), before and after two stats packets with marker values, and reports where
                                 each stats field lands. Saves l99probe-memory-map.json.
+  skin-file blue-1 [--out F]    OFFLINE: build an interface file from the stock one with the Numpad "1" key tinted
+                                blue (icon 341, both banks). Proves every other byte is unchanged, saves a
+                                before/after PNG, and prints the install command. Sends nothing.
   Bootloader (cable; keyboard in bootloader mode via Fn, X, 0, 6; research/ISP_PROTOCOL.md):
   isp-probe                     READ-ONLY: handshake + flash ID. Writes nothing. Checks the screen matches the capture.
                                 Use --direct (with sudo) for every isp command: the serial path is unreliable and
@@ -411,6 +414,30 @@ func uiBlockTest() throws {
     print("Open the Mini Numpad page (leave and re-enter it if it was open). If nothing changed, switch the keyboard off and on and look again.")
 }
 
+// MARK: Interface-file writer (offline)
+
+func skinFile() throws {
+    guard args.first == "blue-1" else { throw LinkError("skin-file needs: blue-1") }
+    let out = option("--out") ?? projectRoot.appendingPathComponent("build/UartTFT-II_Flash-blue-1.bin").path
+    try FileManager.default.createDirectory(at: URL(fileURLWithPath: out).deletingLastPathComponent(), withIntermediateDirectories: true)
+    var file = try InterfaceFile(stockFile: factoryFile)
+    let id = InterfaceBlockTest.iconID
+    let ic = try file.icon(id)
+    let before = try file.pixels(id)
+    try file.replaceIcon(id, pixels: before.map(Art4444.tintBlue))
+    let crc = try file.write(to: out)
+    let ranges = file.changedRanges()
+    print(String(format: "Icon %d (%d×%d, format %d) at 0x%08X, both banks.", id, ic.width, ic.height, ic.format, ic.address))
+    print("Changed ranges (all inside icon \(id)):")
+    for r in ranges { print(String(format: "  0x%08X–0x%08X  (%d bytes)", r.lowerBound, r.upperBound - 1, r.count)) }
+    print("Every other byte matches the stock file. Size \(file.bytes.count), CRC32 \(String(format: "%08X", crc)).")
+    print("Saved: \(out)")
+    let png = (out as NSString).deletingPathExtension + "-preview.png"
+    try Images.iconPair(before, try file.pixels(id), width: ic.width, height: ic.height, to: png)
+    print("Preview (stock | new): \(png)")
+    print("Install (bootloader mode, cable): sudo \(CommandLine.arguments[0]) isp-flash \"\(out)\" --direct")
+}
+
 // MARK: Bootloader (ISP)
 
 func bootloaderPrompt() -> Bool {
@@ -506,6 +533,7 @@ do {
         try sendGIF(try Images.factoryGIF(flashFile: factoryFile), label: "factory animation")
     case "ui-block-test": try uiBlockTest()
     case "memory-map": try memoryMap()
+    case "skin-file": try skinFile()
     case "isp-probe": try ispProbe()
     case "isp-flash": try ispFlash()
     case "isp-restart": try ispRestart()

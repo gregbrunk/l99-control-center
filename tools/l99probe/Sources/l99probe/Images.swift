@@ -105,6 +105,29 @@ enum Images {
         try rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
     }
 
+    /// PNG of two ARGB4444 icons side by side (stock left, new right) over black, scaled 4×.
+    static func iconPair(_ before: [UInt16], _ after: [UInt16], width n: Int, height m: Int, to path: String) throws {
+        let s = 4, gap = 8, W = (2 * n) * s + gap, H = m * s
+        let ctx = CGContext(data: nil, width: W, height: H, bitsPerComponent: 8, bytesPerRow: W * 4,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let p = ctx.data!.assumingMemoryBound(to: UInt8.self)
+        for y in 0..<H {
+            for x in 0..<W {
+                let o = 4 * (y * W + x); p[o + 3] = 255
+                let half = n * s + gap
+                guard x < n * s || x >= half else { p[o] = 60; p[o + 1] = 60; p[o + 2] = 60; continue }
+                let src = x < n * s ? before : after, xx = (x < n * s ? x : x - half) / s
+                let v = src[(y / s) * n + xx]
+                let a = Int(v >> 12) * 17
+                let c = [Int((v >> 8) & 15) * 17, Int((v >> 4) & 15) * 17, Int(v & 15) * 17]
+                for k in 0..<3 { p[o + k] = UInt8(c[k] * a / 255) }
+            }
+        }
+        let rep = NSBitmapImageRep(cgImage: ctx.makeImage()!)
+        try rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
+    }
+
     /// The 171-frame factory animation, sliced from the verified factory file and checked.
     static func factoryGIF(flashFile: String) throws -> [UInt8] {
         guard let fh = FileHandle(forReadingAtPath: flashFile) else { throw LinkError("Factory file not found: \(flashFile)") }

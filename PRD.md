@@ -35,7 +35,7 @@ We will build a private, lightweight macOS menu bar app that does for the AULA L
 **Headline results:**
 - **Uploads work.** A full photo-frame upload takes 0.8 s, and the screen confirms every block with its own checksum.
 - **Phase 2 is GO and fully wireless.** Clock, stats, the music wave and battery all work over the 2.4 GHz dongle. Music is smoother over the dongle (≈75 fps) than over the cable.
-- **Recovery needs rescoping.** The slots can't be read back, and a full interface-file restore needs AULA's Windows tool. Restoring the factory photo and GIF from the Mac *is* possible.
+- **The Mac can install whole interface files (Nov 18).** `l99probe isp-flash --direct` wrote the stock file through the screen's bootloader in about 4½ minutes, with every read-back check matching (research/ISP_PROTOCOL.md). So a full restore and every skin install now work from the Mac, on the cable. The slots still can't be read back.
 
 ## What we know
 
@@ -121,7 +121,7 @@ The app is personal, local and quiet. It is built for one Mac and one keyboard a
 - **Windows is a fallback only.** A Windows machine is available for rare jobs such as a factory restore or a firmware update. It is never part of the normal workflow.
   - It must be a **real PC**. Parallels on this Apple Silicon Mac can't run AULA's screen reset tool (tried Nov 18, see FINDINGS.md).
   - **The screen restore was proven on a real PC on Nov 18:** about 2–3 minutes, with the final message "OK".
-  - **Skins and layouts install through that PC too.** The Mac-install test showed the screen ignores Mac writes outside the photo, background and GIF slots (Nov 18). Each interface-file change means one occasional trip to the PC with AULA's screen tool and our built `UartTFT-II_Flash.bin`. Everything day to day stays on the Mac over the dongle.
+  - **Skins and layouts no longer need the PC.** The upload command can't write the interface area, but the Mac now talks to the screen's bootloader directly and installs the whole file itself (Nov 18). Each skin change is one cable install of about 4½ minutes. The PC stays as a fallback.
 - **Never touch the control programs.** No changes to the keyboard firmware or the screen's control program. Phase 3 changes only the interface file.
 - **Keyboard functions come first.** Lighting controls, Caps/Num Lock, connection and battery status, and the mini numpad must keep working after every change.
 - **Learn from the existing projects; don't depend on them.** Protocol knowledge comes from the open-source repos and AULA's own driver, reimplemented in Swift. `tools/l99probe/Sources/L99Core` is the start of that, with 18 tests checked against captures and the factory file.
@@ -204,16 +204,16 @@ Goal: make the screen look better and carry less, with every keyboard function i
   - Real-time Data page.
 - **Hide or show whole apps** on the home screen (e.g. hide Touchpad).
 - **Skins are made by Claude and added to the app's skin library**, e.g. a folder per skin with a manifest and exact-size artwork. New ones are generated on request later, the same way.
-- The app combines the chosen skins and hidden apps into one interface file, previews every changed page, proves nothing else changed, and the Windows tool installs it. Every change of skin means one Windows install.
+- The app combines the chosen skins and hidden apps into one interface file, previews every changed page, proves nothing else changed, and installs it from the Mac through the bootloader (cable, about 4½ minutes).
 - **Screen catalog done (Nov 18)** (see FINDINGS.md, "Screen catalog"):
   - Every area listed is made of plain artwork, except the Play visualiser bars. The control program draws those bars, so they can't be reskinned. Everything around them can.
   - The Calculator's result digits use a built-in font.
   - Home tiles are one picture with separate tap areas, so apps can be hidden and the grid closed up without a gap.
-- **Installing without Windows (to test):** the Mac upload command addresses the same flash offsets as the interface file. Rewriting only the changed 128 KiB blocks from the Mac might install a skin in seconds. This is untested, and outside today's write bounds. It needs Alison's approval and a passed Windows restore test first. Until then, the plan is one Windows install per skin change.
+- **Installing without Windows: done (Nov 18).** The upload command can't write the interface area (MAC_INSTALL_TEST.md), but the Mac bootloader flasher can (ISP_PROTOCOL.md). Writing only changed blocks may be possible later; version 1 writes the whole file.
 
-- **Prerequisite:** a **confirmed Windows restore** of the full interface file, using AULA's ISP tool on the Windows machine. This must work before any interface write.
+- **Prerequisite met:** the Windows restore and the Mac restore of the stock file both passed (Nov 18).
   - An in-app full restore is **out of scope**. The ISP erase/program sequence hasn't been reverse-engineered, it writes the whole 127.6 MB image, and no recovery from a half-written flash has been proven.
-- **Writing the reskinned file:** through the Windows ISP tool, too. The Mac app builds and previews the modified `UartTFT-II_Flash.bin`; Windows flashes it.
+- **Writing the reskinned file:** `InterfaceFile` (L99Core) replaces icon art in place and refuses any change outside the replaced icons; `l99probe isp-flash <file> --direct` installs it. First test file: `skin-file blue-1` (the Numpad "1" key tinted blue). **Installed from the Mac and confirmed on the screen (Nov 19):** the key turned blue and nothing else changed.
   - softce proved that a UI-only flash with `HFD_ISP_TOOL_V1.31.exe` + `UartTFT-II_Flash.bin` works.
 - **Mini Numpad (page 21):** new normal and pressed artwork for all 17 buttons, with the same touch zones and codes.
   - Replace images in place at the same size, as raw ARGB4444.

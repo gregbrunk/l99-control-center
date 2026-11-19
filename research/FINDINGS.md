@@ -288,6 +288,8 @@ Done offline with our own read-only parser, `tools/screen-catalog/catalog.py`. I
 | 26 | Clock |
 | 27 | "Colour NG!" |
 
+The Home tile AULA labels **Effects** opens the **full-screen GIF player** (confirmed by the user, Nov 19). Its touch record is action code 96, with no `goto` page. The skins label it **GIFs**.
+
 **What each skin area is made of** (English bank; the Chinese bank shares most art):
 
 | Area | Made of | Skinnable? |
@@ -378,6 +380,8 @@ Built with `l99probe skin-file step2-test --art <folder>` from art exported by t
   - **LT format** (our decode; `LTImage.swift`): `"LT", w u16, h u16, chunks u8, 3, total length u32`, then per chunk `u32 (length | mode<<24)` + a 256-colour RGB565 palette, then the chunks' data. Chunks cut the pixel stream at 256 distinct colours; mode 1 = run-length pairs `(count−1, index)`, mode 0 = raw indices. **Lossless.** Re-encoding the stock images gives 7 of 10 byte-identical, and all 10 decode back exactly. Our pages took 3–56 chunks (limit 255).
   - Dynamic widgets (clock, numbers, state icons, bars) redraw cleanly over the background.
 - **Home (page 1) ignores the background table.** It shows the wallpaper picked in Screen customisations → Background and doesn't clear the screen otherwise, so leftovers from the previous page show. Fix used: a full-screen RGB565 image as a type-3 record, moved to the front of the page's draw order (same record list length, new order), plus the table copy so top-bar widgets repaint their patches from the same picture. **Reordering a page's display records works.**
+- **Correction (Nov 19, first app install, all Ceramic):** Home's top-bar widgets repaint their patches from the **wallpaper** (the Background slot at `0x04180000`, which lies inside the interface file), not from the background table. The stock file has zeros there, so a light Home showed black boxes behind the clock and indicators; dark Homes hid it. The skin maker now also writes the Home picture into the Background slot (11-byte header + RGB565). Uploading a new background from the app later will show through those patches again. **PROVEN [HW]** (Nov 19, reinstalled from the app: clean top bar on a Ceramic Home).
+- **12-hour clock:** the clock records only have 24-hour formats (4, 5). The app sends the hour as 1–12 when US units are on and sends each new hour at once, so the screen's own clock never reaches 13:00 while the Mac is running. **PROVEN [HW]** (Nov 19), along with °F from the Mac and the skin's °F label.
 - **RGB565 (format 0) art works for touch-button images**, not only static icons. Calculator keys are opaque crops of the background (up) and of a pressed render (down): seamless, and the pressed state works.
 - **Calculator (Cyberpunk):** background, 18 re-laid-out keys, title and back arrow drawn in the background (their records point at a 1×1 transparent icon). The result text (type 1) draws cleanly over the dark display box.
 - **Real-time Data (Glass Night):**

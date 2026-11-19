@@ -1,7 +1,7 @@
 // Simple line icons on a 24-unit grid, drawn with CoreGraphics (no icon fonts).
 import AppKit
 
-enum Icon { case gear, screen, bulb, sparkles, note, chart, photo, numpad, calculator, touchpad
+enum Icon { case gear, screen, bulb, sparkles, film, note, chart, photo, numpad, calculator, touchpad
             case volDown, mute, volUp, alarm, play, pause, playPause, prev, next, backspace
             case thermo, drop, chip, gpu, sun, cloudSun }
 
@@ -37,6 +37,10 @@ func icon(_ c: CGContext, _ k: Icon, _ r: CGRect, _ col: NSColor, _ lw: CGFloat 
             c.addQuadCurve(to: CGPoint(x: x, y: y - s), control: CGPoint(x: x - s * 0.2, y: y - s * 0.2)); c.strokePath()
         }
         star(10, 13, 7); star(18.5, 5.5, 3)
+    case .film:
+        box(3, 4, 18, 16, 2.5); line([(3.5, 8), (20.5, 8)]); line([(3.5, 16), (20.5, 16)])
+        for x in stride(from: CGFloat(6.5), through: 17.5, by: 5.5) { circ(x, 6, 0.8, fill: true); circ(x, 18, 0.8, fill: true) }
+        c.move(to: CGPoint(x: 10, y: 9.8)); c.addLine(to: CGPoint(x: 15, y: 12)); c.addLine(to: CGPoint(x: 10, y: 14.2)); c.closePath(); c.fillPath()
     case .note: line([(9, 17), (9, 5), (19, 3), (19, 15)]); circ(6.5, 17.5, 2.6); circ(16.5, 15.5, 2.6); line([(9, 8.5), (19, 6.5)])
     case .chart: line([(3, 3), (3, 21), (21, 21)]); line([(6.5, 16), (10.5, 11), (14, 14), (20, 6)]); line([(16.5, 6), (20, 6), (20, 9.5)])
     case .photo: box(3, 5, 18, 14, 2.5); circ(8.5, 10, 1.7); line([(4, 17), (9.5, 13), (13, 15.5), (16.5, 12), (20.5, 15.5)])

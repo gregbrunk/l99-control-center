@@ -80,6 +80,7 @@ final class KeyboardLink {
         c.cableBusy = transfer?.isBusy ?? false
         c.paused = screensAsleep
         c.clock = settings.clock
+        c.usUnits = settings.usUnits
         c.load = settings.load
         c.weather = settings.weather ? weather.snapshot : nil
         c.music = settings.music
@@ -103,6 +104,8 @@ nonisolated struct LiveConfig: Sendable, Equatable {
     var cableBusy = false
     var paused = false
     var clock = true
+    /// 12-hour clock and °F.
+    var usUnits = false
     var load = true
     var weather: WeatherModel.Snapshot?
     var music = false
@@ -154,6 +157,8 @@ nonisolated final class LiveEngine: @unchecked Sendable {
     private var dongleProbe = Date.distantPast
     private var lastBattery = Date.distantPast
     private var lastStats = Date.distantPast
+    /// What the last packet carried, so a new hour or a units change goes out at once.
+    private var lastSentHour = -1, lastSentUnits = false
     private var lastCableMusic = Date.distantPast
     private var handledClockRequests = -1
 
@@ -257,7 +262,10 @@ nonisolated final class LiveEngine: @unchecked Sendable {
     }
 
     private func statsAndClock(_ c: LiveConfig, route: LiveStatus.Route) throws {
-        let forced = c.clockRequests != handledClockRequests
+        // The screen's clock only runs in 24-hour mode, so the 12-hour clock is sent as 1–12. The screen's own
+        // clock would then run on to 13:00, so each new hour goes out straight away.
+        let hourNow = Calendar.current.component(.hour, from: Date())
+        let forced = c.clockRequests != handledClockRequests || hourNow != lastSentHour || c.usUnits != lastSentUnits
         let sendsStats = c.load || c.weather != nil
         // CPU/GPU every second; weather alone every 30 s; the clock alone every 6 hours.
         let period: TimeInterval = c.load ? 1 : sendsStats ? 30 : 6 * 3600
@@ -274,14 +282,17 @@ nonisolated final class LiveEngine: @unchecked Sendable {
         }
 
         var r = Realtime(date: Date())
+        if c.usUnits { r.hour = r.hour % 12 == 0 ? 12 : r.hour % 12 }
         if c.load {
             r.cpuLoad = status.cpu ?? 0
             r.gpuLoad = status.gpu ?? 0
         }
         if let w = c.weather {
-            r.airTemp = min(99, max(-99, w.temperature))
-            r.dayHigh = min(99, max(-99, w.high))
-            r.nightLow = min(99, max(-99, w.low))
+            let (t, hi, lo) = c.usUnits ? (w.temperatureF, w.highF, w.lowF) : (w.temperature, w.high, w.low)
+            let top = c.usUnits ? 199 : 99
+            r.airTemp = min(top, max(-99, t))
+            r.dayHigh = min(top, max(-99, hi))
+            r.nightLow = min(top, max(-99, lo))
             r.humidity = min(100, max(0, w.humidity))
             r.condition = min(5, max(0, w.condition))
         }
@@ -299,6 +310,7 @@ nonisolated final class LiveEngine: @unchecked Sendable {
             return
         }
         lastStats = Date()
+        lastSentHour = hourNow; lastSentUnits = c.usUnits
         if sent {
             handledClockRequests = c.clockRequests
             status.lastSync = Date()

@@ -18,6 +18,8 @@ public struct InterfaceFile {
     /// Existing art lives here; in-place replacements must stay inside it.
     public static let artRange = 0x0062_5000..<0x00A3_55EC
     public static let projectSizeOffset = 0x174
+    /// Every interface file (stock or skinned) is exactly this long.
+    public static let stockSize = 127_599_044
     /// New art may go from the project's end up to the separate images at 0x04000000.
     public static let paddingEnd = 0x0400_0000
     public static let pageCount = 30
@@ -191,6 +193,21 @@ public struct InterfaceFile {
         put32(o, start); put16(o + 4, 320); put16(o + 6, 480); put32(o + 8, padded.count | 3 << 24)
         allowed.append(o..<(o + 12))
         log.append(String(format: "page %d background: 320×480 LT (%d chunks, %d bytes) at 0x%08X", page, Int(lt[6]), lt.count, start))
+    }
+
+    /// Writes a full-screen picture into the Background slot (0x04180000), which lies inside this file.
+    /// Home draws the wallpaper picked in Screen customisations, and its top-bar widgets wipe their patch with it
+    /// before redrawing. The stock file's slot is all zeros, so a light Home showed black boxes in its top bar.
+    public mutating func setWallpaper(pixels new: [UInt16]) throws {
+        guard new.count == 320 * 480 else { throw Failure.refused("A wallpaper needs 320×480 pixels, got \(new.count)") }
+        let container = try ScreenProtocol.imageContainer(rgb565: new.flatMap { [UInt8($0 & 0xFF), UInt8($0 >> 8)] })
+        try ScreenProtocol.validateContainer(container)
+        let slot = ScreenProtocol.Slot.background
+        let start = Int(slot.base)
+        guard container.count <= slot.capacity, start + container.count <= bytes.count else { throw Failure.refused("The Background slot isn't in this file. Stopped.") }
+        bytes.replaceSubrange(start..<(start + container.count), with: container)
+        allowed.append(start..<(start + container.count))
+        log.append(String(format: "Background slot: Home picture (%d bytes) at 0x%08X", container.count, start))
     }
 
     // MARK: Pages and touch buttons

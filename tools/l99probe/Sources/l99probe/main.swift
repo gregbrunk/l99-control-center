@@ -451,6 +451,7 @@ func skinFile() throws {
     case "icons": try skinIconStrip()
     case "free-slots": try skinFreeSlots()
     case "mix": try skinMix()
+    case "contrast": skinContrast()
     default: throw LinkError("skin-file needs: blue-1, layout-test, topbar-test or step2-test")
     }
 }

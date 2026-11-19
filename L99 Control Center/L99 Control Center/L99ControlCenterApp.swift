@@ -1,8 +1,20 @@
 import AppKit
 import SwiftUI
 
-/// Menu bar only (LSUIElement = YES): no Dock icon. Windows open from the dropdown.
+/// Entry point. With `--install-interface` the executable runs as the screen installer (started by
+/// the app with administrator rights, see InterfaceInstaller); otherwise it's the menu bar app.
 @main
+enum Entry {
+    static func main() {
+        if let code = InterfaceInstaller.runIfRequested(CommandLine.arguments) { exit(code) }
+        #if DEBUG
+        DebugSnapshot.renderIfRequested()
+        #endif
+        L99ControlCenterApp.main()
+    }
+}
+
+/// Menu bar only (LSUIElement = YES): no Dock icon. Windows open from the dropdown.
 struct L99ControlCenterApp: App {
     @State private var model = AppModel()
 
@@ -30,6 +42,12 @@ struct L99ControlCenterApp: App {
         }
         .windowResizability(.contentSize)
 
+        Window("Skins", id: WindowID.skins) {
+            SkinsView(model: model)
+        }
+        .defaultSize(width: 980, height: 700)
+
+
         Window("Music and Key Lighting", id: WindowID.music) {
             MusicView(model: model)
         }
@@ -42,6 +60,7 @@ enum WindowID {
     static let library = "library"
     static let recovery = "recovery"
     static let music = "music"
+    static let skins = "skins"
 }
 
 /// Opens one of the app's windows and brings it to the front (the app has no Dock icon).

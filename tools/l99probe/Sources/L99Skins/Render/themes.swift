@@ -350,6 +350,9 @@ func header(_ s: SID, _ c: CGContext, title: String, sub: String, code: String, 
     }
 }
 
+/// The temperature unit printed on the Data page.
+nonisolated(unsafe) var temperatureUnit = "°C"
+
 /// When set, the top bar is drawn in this style instead of the page's.
 nonisolated(unsafe) var topBarStyle: SID? = nil
 

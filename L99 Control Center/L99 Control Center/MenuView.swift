@@ -25,6 +25,15 @@ struct MenuView: View {
                 LiveRow(title: "CPU and GPU load", detail: loadStatus, isOn: settingBinding(\.load))
                 LiveRow(title: "Weather", detail: weatherStatus, isOn: settingBinding(\.weather))
                 LiveRow(title: "Music wave", detail: musicStatus, isOn: settingBinding(\.music))
+                HStack {
+                    Text("Units").font(.callout)
+                    Spacer()
+                    Picker("Units", selection: Binding(get: { model.settings.usUnits }, set: { model.setUSUnits($0) })) {
+                        Text("US (12 h, °F)").tag(true)
+                        Text("Metric (24 h, °C)").tag(false)
+                    }
+                    .labelsHidden().pickerStyle(.segmented).controlSize(.small).fixedSize()
+                }
                 if let note = liveNote {
                     Text(note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -54,6 +63,7 @@ struct MenuView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 MenuLink("Library…", systemImage: "photo.on.rectangle") { open(WindowID.library) }
+                MenuLink("Skins…", systemImage: "paintpalette") { open(WindowID.skins) }
                 MenuLink("Recovery…", systemImage: "arrow.counterclockwise") { open(WindowID.recovery) }
                 MenuLink("Music and key lighting…", systemImage: "waveform") { open(WindowID.music) }
             }
@@ -105,7 +115,9 @@ struct MenuView: View {
 
     private var weatherStatus: String {
         guard model.settings.weather else { return "Off" }
-        if let w = model.weather.snapshot { return "\(w.temperature)°C · \(w.humidity)%" }
+        if let w = model.weather.snapshot {
+            return model.settings.usUnits ? "\(w.temperatureF)°F · \(w.humidity)%" : "\(w.temperature)°C · \(w.humidity)%"
+        }
         return model.weather.problem == nil ? model.weather.step : "Unavailable"
     }
 

@@ -28,7 +28,7 @@ func tileRad(_ s: SID) -> CGFloat { s.glass ? 22 : s == .ember ? 18 : 16 }
 
 // MARK: Home
 
-let allTiles: [(Icon, String)] = [(.gear, "Settings"), (.screen, "Screen"), (.bulb, "Colour"), (.sparkles, "Effects"),
+let allTiles: [(Icon, String)] = [(.gear, "Settings"), (.screen, "Screen"), (.bulb, "Colour"), (.film, "GIFs"),
                                    (.photo, "Photos"), (.numpad, "Numpad"), (.calculator, "Calculator"), (.touchpad, "Touchpad")]
 
 /// Tiles reflow to fill the grid area (y 200–364) when apps are hidden: 4 columns for 7–8, else 3.

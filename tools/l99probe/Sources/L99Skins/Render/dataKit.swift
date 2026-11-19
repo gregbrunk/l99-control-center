@@ -148,7 +148,7 @@ struct DataKit {
             func unit(_ u: String, _ a: (Int, Int), size: CGFloat, glyph: CGFloat) {
                 lbl(s, c, u, s.font(size), s.sub(.tile), left: CGPoint(x: CGFloat(a.0) + 3, y: CGFloat(a.1) + CGFloat(glyphH(glyph)) / 2))
             }
-            unit("°C", temp, size: 16, glyph: midSize); unit("%", hum, size: 16, glyph: midSize)
+            unit(temperatureUnit, temp, size: 16, glyph: midSize); unit("%", hum, size: 16, glyph: midSize)
             unit("%", cpu, size: 18, glyph: cpuSize); unit("%", gpu, size: 18, glyph: cpuSize)
             // The day's high, beside the weather icon, in the date digits.
             lblRight(s, c, s.caps("High"), s.font(9.5, .medium), s.sub(.hero), right: CGFloat(Self.high.0) - 24, y: CGFloat(Self.high.1) + 9)

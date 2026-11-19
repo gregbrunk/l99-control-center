@@ -135,7 +135,7 @@ struct RecoveryView: View {
     }
 }
 
-private struct Card<Content: View>: View {
+struct Card<Content: View>: View {
     let systemImage: String
     let tint: Color
     let title: String

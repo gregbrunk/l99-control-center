@@ -2,16 +2,18 @@ import AppKit
 import L99Core
 
 /// The apps on Home, in grid order.
-public enum HomeApp: String, CaseIterable, Sendable {
-    case settings, screen, colour, effects, photos, numpad, calculator, touchpad
-    public var displayName: String { rawValue == "colour" ? "Colour" : rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
-    /// The touch record that opens it: action code, and the page it goes to (nil for Effects, which is an action).
+public enum HomeApp: String, CaseIterable, Sendable, Codable {
+    case settings, screen, colour, gifs, photos, numpad, calculator, touchpad
+    public var displayName: String {
+        switch self { case .gifs: "GIFs"; default: rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
+    }
+    /// The touch record that opens it: action code, and the page it goes to (nil for GIFs, the full-screen GIF player, which is an action).
     var touch: (code: Int, goto: Int?) {
         switch self {
         case .settings: (32, 4)
         case .screen: (32, 16)
         case .colour: (32, 17)
-        case .effects: (96, nil)
+        case .gifs: (96, nil)
         case .photos: (32, 20)
         case .numpad: (32, 21)
         case .calculator: (32, 22)
@@ -21,12 +23,17 @@ public enum HomeApp: String, CaseIterable, Sendable {
 }
 
 /// What to install: a style per section (sections left out stay stock) and the Home apps to hide.
-public struct SkinPlan: Sendable, Equatable {
+public struct SkinPlan: Sendable, Equatable, Codable {
     public var styles: [SkinSection: SkinStyle]
     public var hiddenApps: Set<HomeApp>
-    public init(styles: [SkinSection: SkinStyle] = [:], hiddenApps: Set<HomeApp> = []) { self.styles = styles; self.hiddenApps = hiddenApps }
+    /// true prints °F on the Data page (the Mac then sends Fahrenheit). nil is °C, as in plans saved before this existed.
+    public var fahrenheit: Bool?
+    public init(styles: [SkinSection: SkinStyle] = [:], hiddenApps: Set<HomeApp> = [], fahrenheit: Bool = false) {
+        self.styles = styles; self.hiddenApps = hiddenApps; self.fahrenheit = fahrenheit ? true : nil
+    }
+    public var usesFahrenheit: Bool { fahrenheit ?? false }
 
-    var pages: [SkinSection] { [.home, .play, .data, .numpad, .calculator].filter { styles[$0] != nil } }
+    public var pages: [SkinSection] { [.home, .play, .data, .numpad, .calculator].filter { styles[$0] != nil } }
     /// One top bar is shared by every restyled page. Without a choice it follows Home (or the first page).
     public var topBarStyle: SkinStyle? { styles[.topBar] ?? styles[.home] ?? pages.first.flatMap { styles[$0] } }
 }
@@ -78,6 +85,7 @@ public enum SkinBuilder {
         try claim([blank, blank + 1], "blank")
         try f.placeIcon(blank, width: 1, height: 1, pixels: [0]); try f.placeIcon(blank + 1, width: 1, height: 1, pixels: [0])
 
+        temperatureUnit = plan.usesFahrenheit ? "°F" : "°C"; defer { temperatureUnit = "°C" }
         let tb = plan.topBarStyle!
         try placeTopBar(&f, TopBarKit(tb.sid), claim: claim)
         if plan.styles[.topBar] == nil { notes.append("Top bar: \(tb.displayName), following \(plan.styles[.home] != nil ? "Home" : "the first restyled page").") }
@@ -237,6 +245,8 @@ public enum SkinBuilder {
         // Home ignores the background table (it shows the wallpaper picked in Screen settings), so the
         // picture is also a full-screen image drawn first. The table copy lets top-bar widgets repaint their patches.
         try f.setBackground(page: p, pixels: px)
+        // Home's top-bar widgets repaint their patches from the wallpaper slot, not the table, so it gets the picture too.
+        try f.setWallpaper(pixels: px)
         try f.placeIcon(homePicture, width: 320, height: 480, pixels: px, format: InterfaceFile.formatRGB565)
         func move(_ code: Int, goto: Int? = nil, _ r: CGRect) throws {
             try f.moveButton(page: p, code: code, goto: goto, x: Int(r.minX.rounded()), y: Int(r.minY.rounded()), width: Int(r.width.rounded()), height: Int(r.height.rounded()))

@@ -150,7 +150,7 @@ func exportStep2(_ dir: String) {
     let manifest: [String: Any] = [
         "calcKeys": Dictionary(uniqueKeysWithValues: calculatorKeys(.cyber).map { ($0.label, rectJSON($0.rect)) }),
         "home": ["play": rectJSON(heroes[0]), "data": rectJSON(heroes[1]),
-                 "tiles": ["settings", "screen", "colour", "effects", "numpad", "calculator"].enumerated().reduce(into: [String: [Int]]()) { $0[$1.1] = rectJSON(tiles[$1.0]) },
+                 "tiles": ["settings", "screen", "colour", "gifs", "numpad", "calculator"].enumerated().reduce(into: [String: [Int]]()) { $0[$1.1] = rectJSON(tiles[$1.0]) },
                  "media": ["volDown": rectJSON(zones[0]), "mute": rectJSON(zones[1]), "volUp": rectJSON(zones[2]), "alarm": rectJSON(zones[3])]],
         "data": ["time": p(DataSpec.time), "weekday": p(DataSpec.weekday), "date": p(DataSpec.date), "weather": p(DataSpec.weather),
                  "temp": p(DataSpec.temp), "hum": p(DataSpec.hum), "cpu": p(DataSpec.cpu), "gpu": p(DataSpec.gpu), "cpuTemp": p(DataSpec.cpuTemp),

@@ -149,7 +149,7 @@ func skinStep2Test() throws {
         try move(32, goto: 18, h["play"] as! [Int]); try move(32, goto: 19, h["data"] as! [Int])
         let tiles = h["tiles"] as! [String: [Int]]
         try move(32, goto: 4, tiles["settings"]!); try move(32, goto: 16, tiles["screen"]!); try move(32, goto: 17, tiles["colour"]!)
-        try move(96, tiles["effects"]!); try move(32, goto: 21, tiles["numpad"]!); try move(32, goto: 22, tiles["calculator"]!)
+        try move(96, tiles["gifs"]!); try move(32, goto: 21, tiles["numpad"]!); try move(32, goto: 22, tiles["calculator"]!)
         // Hidden apps: Photos (20) and Touchpad (23) shrink to a 1×1 spot in the bottom-left corner.
         try move(32, goto: 20, [0, 479, 1, 1]); try move(32, goto: 23, [0, 479, 1, 1])
         let media = h["media"] as! [String: [Int]]
@@ -281,5 +281,13 @@ func skinMix() throws {
         }
         try SkinPreview.writePNG(sheet.makeImage()!, to: sheetPath)
         print("Preview: \(sheetPath)")
+    }
+}
+
+/// Prints the top-bar contrast for every page style × top-bar style.
+func skinContrast() {
+    print("page \\ bar   " + SkinStyle.allCases.map { String($0.rawValue.prefix(8)).padding(toLength: 9, withPad: " ", startingAt: 0) }.joined())
+    for p in SkinStyle.allCases {
+        print(String(p.rawValue.prefix(12)).padding(toLength: 13, withPad: " ", startingAt: 0) + SkinStyle.allCases.map { String(format: "%-9.1f", SkinPreview.topBarContrast(page: p, topBar: $0)) }.joined())
     }
 }

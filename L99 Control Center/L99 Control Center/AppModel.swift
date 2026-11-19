@@ -11,6 +11,7 @@ final class AppModel {
     let settings: LiveSettings
     let weather: WeatherModel
     let launchAtLogin = LaunchAtLogin()
+    let skins = SkinStore()
 
     init() {
         let devices = DeviceMonitor()
@@ -25,5 +26,12 @@ final class AppModel {
         self.weather = weather
         keyboard = KeyboardLink(devices: devices, transfer: transfer, settings: settings, weather: weather)
         devices.onChange = { [weak keyboard] in keyboard?.connectionChanged() }
+        skins.fahrenheit = settings.usUnits
+    }
+
+    /// One switch for the live data and the skin's Data page label.
+    func setUSUnits(_ us: Bool) {
+        settings.usUnits = us
+        skins.fahrenheit = us
     }
 }

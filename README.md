@@ -3,7 +3,7 @@
 A private macOS menu bar app for the **AULA L99** keyboard's 320×480 touchscreen. It does on a Mac what AULA's Windows-only software does, and then some:
 
 - **Uploads:** photos, backgrounds and GIFs, with recovery to the factory content. No Windows needed.
-- **Live data over the 2.4 GHz dongle:** clock, weather, CPU/GPU load, battery, and the music visualiser.
+- **Live data over the 2.4 GHz dongle:** clock, weather, CPU/GPU load, battery, and the music visualiser. US (12-hour, °F) or metric units.
 - **Skins:** six styles for the screen's own pages, picked per page, built and installed from the Mac.
 
 The screen stays a keyboard command center. The app never touches the keyboard's firmware or the screen's control program.
@@ -14,7 +14,7 @@ The screen stays a keyboard command center. The app never touches the keyboard's
 |---|---|---|
 | 1 | Uploads and recovery (cable) | ✅ Built and tested on hardware |
 | 2 | Live data and music over the dongle | ✅ Built and tested on hardware |
-| 3 | Skins | ✅ Skin maker proven on hardware · 🚧 skin picker in the app is next |
+| 3 | Skins | ✅ Skin maker and the app's Skins window, both proven on hardware |
 
 ### Skins
 
@@ -24,6 +24,8 @@ Each part of the screen takes its own style:
 - **Top bar:** one shared bar over every restyled page.
 - **Styles:** Liquid Glass Night, Liquid Glass Day, Cyberpunk, Ceramic, Ember, Midnight LED.
 - **Hiding apps:** Home apps you don't use can be hidden; the remaining tiles re-flow to fill the grid.
+
+In the app, **Skins…** in the menu bar opens the picker: a style for each page, live previews, a warning when the top bar would be hard to read, and a guided install (cable, Fn+X, 0, 6, then the Mac's admin password). **Back to stock…** restores the factory interface the same way. The first time, the app asks for `UartTFT-II_Flash.bin` from AULA's reset package and checks it.
 
 The skin maker renders the art and lays it out. It builds one interface file from the stock file, which the Mac installs through the screen's bootloader over the cable (about 4½ minutes). Every read-back is checked against the file.
 

@@ -11,6 +11,8 @@ final class LiveSettings {
     var load: Bool { didSet { save(load, "live.load") } }
     var weather: Bool { didSet { save(weather, "live.weather") } }
     var music: Bool { didSet { save(music, "music.enabled") } }
+    /// US units: 12-hour clock and °F. Otherwise 24-hour and °C.
+    var usUnits: Bool { didSet { save(usUnits, "units.us") } }
     /// 0...1, how tall quiet music looks.
     var sensitivity: Double { didSet { save(sensitivity, "music.sensitivity") } }
     /// The two style bytes in the music packet. AULA's driver sends 2 and 0. Mapped Nov 18 on Alison's keyboard:
@@ -54,7 +56,9 @@ final class LiveSettings {
         defaults.register(defaults: [
             "live.clock": true, "live.load": true, "live.weather": true, "music.enabled": false,
             "music.sensitivity": 0.5, "music.direction": 1, "music.palette": 0,
+            "units.us": Locale.current.measurementSystem == .us,
         ])
+        usUnits = defaults.bool(forKey: "units.us")
         clock = defaults.bool(forKey: "live.clock")
         load = defaults.bool(forKey: "live.load")
         weather = defaults.bool(forKey: "live.weather")

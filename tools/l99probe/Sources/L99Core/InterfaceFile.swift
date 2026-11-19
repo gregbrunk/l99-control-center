@@ -210,6 +210,23 @@ public struct InterfaceFile {
         log.append(String(format: "Background slot: Home picture (%d bytes) at 0x%08X", container.count, start))
     }
 
+    /// Puts an uploaded picture or GIF into its slot, byte for byte as the upload sent it, so an install
+    /// keeps what's on the screen. The slots lie inside this file; the factory file holds the mascot, the
+    /// factory GIF and an empty background there.
+    public mutating func setSlotContent(_ slot: ScreenProtocol.Slot, payload: [UInt8], name: String) throws {
+        switch slot {
+        case .photo, .background: try ScreenProtocol.validateContainer(payload)
+        case .gif: _ = try GIFContainer.info(payload)
+        }
+        let start = Int(slot.base)
+        guard payload.count <= slot.capacity, start + payload.count <= bytes.count else {
+            throw Failure.refused("“\(name)” doesn't fit the \(slot.displayName.lowercased()) slot. Stopped.")
+        }
+        bytes.replaceSubrange(start..<(start + payload.count), with: payload)
+        allowed.append(start..<(start + payload.count))
+        log.append(String(format: "%@ slot: kept “%@” (%d bytes) at 0x%08X", slot.displayName, name, payload.count, start))
+    }
+
     // MARK: Pages and touch buttons
 
     public func touchButtons(page: Int) throws -> [TouchButton] {

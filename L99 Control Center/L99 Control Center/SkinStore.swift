@@ -15,8 +15,20 @@ final class SkinStore {
     private(set) var installedPlan: SkinPlan?
     /// When the skin on the keyboard was installed from this app.
     private(set) var installedDate: Date?
-    /// Called after any install (a skin or stock): it rewrites the screen's picture memory too.
-    @ObservationIgnored var onInstalled: (() -> Void)?
+    /// Something on the screen now that an install carries over, so it isn't replaced by factory content.
+    struct KeptItem: Sendable {
+        let slot: ScreenProtocol.Slot, id: UUID, name: String, payload: [UInt8]
+    }
+    /// Supplies what's on the screen now. The background is asked for only when Home stays stock
+    /// (a Home skin fills the background slot with its own picture).
+    @ObservationIgnored var contentToKeep: ((_ includeBackground: Bool) -> [KeptItem])?
+    /// What the prepared install keeps, by slot (names for the sheet, ids for the Library afterwards).
+    /// Whether the install being prepared or run is Back to stock.
+    private(set) var installIsStock = false
+    private(set) var keptNames: [ScreenProtocol.Slot: String] = [:]
+    @ObservationIgnored private var keptIDs: [ScreenProtocol.Slot: UUID] = [:]
+    /// Called after any install (a skin or stock) with what it kept: it rewrites the screen's picture memory too.
+    @ObservationIgnored var onInstalled: (([ScreenProtocol.Slot: UUID]) -> Void)?
     /// A skinned Home draws its own full-screen picture, so the background slot belongs to the skin.
     var homeSkinInstalled: Bool { installedPlan?.styles[.home] != nil }
 
@@ -162,19 +174,23 @@ final class SkinStore {
     /// Builds the skin (or picks the stock file), then waits for the bootloader.
     func prepareInstall(stock: Bool) {
         guard hasStock else { return }
-        if stock { install = .ready(stock: true); startPolling(); return }
+        installIsStock = stock
         install = .building
+        let keep = contentToKeep?(stock || plan.styles[.home] == nil) ?? []
+        keptNames = Dictionary(keep.map { ($0.slot, $0.name) }, uniquingKeysWith: { a, _ in a })
+        keptIDs = Dictionary(keep.map { ($0.slot, $0.id) }, uniquingKeysWith: { a, _ in a })
         let plan = plan, stockURL = stockURL, out = builtURL
         renderQueue.async { [weak self] in
             let result: Result<Void, Error> = Result {
                 let bytes = [UInt8](try Data(contentsOf: stockURL))
-                let built = try SkinBuilder.build(plan, stockBytes: bytes)
-                _ = try built.file.write(to: out.path)
+                var file = stock ? try InterfaceFile(stockBytes: bytes) : try SkinBuilder.build(plan, stockBytes: bytes).file
+                for k in keep { try file.setSlotContent(k.slot, payload: k.payload, name: k.name) }
+                _ = try file.write(to: out.path)
             }
             DispatchQueue.main.async {
                 guard let self, self.install == .building else { return }
                 switch result {
-                case .success: self.install = .ready(stock: false); self.startPolling()
+                case .success: self.install = .ready(stock: stock); self.startPolling()
                 case .failure(let e): self.install = .failed("The skin couldn't be built: \(e.localizedDescription)")
                 }
             }
@@ -207,7 +223,7 @@ final class SkinStore {
                 save(installedPlan, "installedSkinPlan")
                 installedDate = Date()
                 UserDefaults.standard.set(installedDate, forKey: "installedSkinDate")
-                onInstalled?()
+                onInstalled?(keptIDs)
                 stopPolling()
             case "error":
                 install = .failed(parts.count > 1 ? parts[1] : "The install stopped.")
@@ -224,7 +240,7 @@ final class SkinStore {
     func startInstall() {
         guard case .ready(let stock) = install, bootloaderReady else { return }
         try? FileManager.default.removeItem(at: statusURL)
-        let file = stock ? stockURL : builtURL
+        let file = builtURL   // stock too: the stock file plus the photo and GIF it keeps
         func q(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
         let exe = Bundle.main.executableURL!.path
         let command = "\(q(exe)) \(InterfaceInstaller.flag) \(q(file.path)) --status \(q(statusURL.path)) >/dev/null 2>&1"

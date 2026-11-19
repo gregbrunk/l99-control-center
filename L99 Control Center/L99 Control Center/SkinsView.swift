@@ -1,4 +1,5 @@
 import AppKit
+import L99Core
 import L99Skins
 import SwiftUI
 
@@ -263,11 +264,17 @@ private struct InstallSheet: View {
     let store: SkinStore
     @Binding var isPresented: Bool
 
-    private var stock: Bool {
-        switch store.install {
-        case .ready(let s), .waitingForPassword(let s), .installing(let s, _, _), .done(let s): s
-        default: false
-        }
+    private var stock: Bool { store.installIsStock }
+
+    /// Which of the screen's pictures the install carries over.
+    private var keptLine: String {
+        let order: [ScreenProtocol.Slot] = [.photo, .gif, .background]
+        let kept = order.compactMap { slot in store.keptNames[slot].map { "\(slot.displayName.lowercased()) “\($0)”" } }
+        let factory = order.filter { $0 != .background && store.keptNames[$0] == nil }.map { $0.displayName.lowercased() }
+        var parts: [String] = []
+        if !kept.isEmpty { parts.append("Keeps your " + kept.formatted(.list(type: .and)) + ".") }
+        if !factory.isEmpty { parts.append("The " + factory.formatted(.list(type: .and)) + " will be the factory one.") }
+        return parts.joined(separator: " ")
     }
 
     var body: some View {
@@ -276,8 +283,13 @@ private struct InstallSheet: View {
             Text("This replaces the screen's interface pages (about 4½ minutes). Your keys, lighting and the screen's own program aren't touched.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
-            step(1, "Build the skin", state: buildState) {
-                if case .building = store.install { Text("Rendering every page…").font(.caption).foregroundStyle(.secondary) }
+            step(1, stock ? "Prepare the stock file" : "Build the skin", state: buildState) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if case .building = store.install {
+                        Text(stock ? "Adding your pictures…" : "Rendering every page…").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text(keptLine).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
             }
             step(2, "Plug in the cable and start bootloader mode", state: bootloaderState) {
                 VStack(alignment: .leading, spacing: 4) {

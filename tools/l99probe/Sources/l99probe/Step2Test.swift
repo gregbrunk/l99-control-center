@@ -250,7 +250,8 @@ func skinFreeSlots() throws {
 }
 
 /// Builds a mixed skin: skin-file mix --home ember --play liquid-glass-night --data … --numpad … --calculator …
-/// [--top-bar style] [--hide photos,touchpad] [--out file] [--preview sheet.png]
+/// [--top-bar style] [--hide photos,touchpad] [--fahrenheit] [--photo payload.bin] [--gif payload.bin]
+/// [--out file] [--preview sheet.png]. --photo and --gif keep uploaded content (a Library item's payload.bin).
 func skinMix() throws {
     var plan = SkinPlan()
     for section in SkinSection.allCases {
@@ -266,10 +267,17 @@ func skinMix() throws {
     }
     let out = option("--out") ?? projectRoot.appendingPathComponent("build/UartTFT-II_Flash-mix.bin").path
     guard let stock = FileManager.default.contents(atPath: factoryFile) else { throw LinkError("Can't read \(factoryFile)") }
+    if CommandLine.arguments.contains("--fahrenheit") { plan.fahrenheit = true }
     let result = try SkinBuilder.build(plan, stockBytes: [UInt8](stock))
     for n in result.notes { print(n) }
+    var file = result.file
+    for (flag, slot) in [("--photo", ScreenProtocol.Slot.photo), ("--gif", .gif)] {
+        guard let path = option(flag) else { continue }
+        guard let data = FileManager.default.contents(atPath: path) else { throw LinkError("Can't read \(path)") }
+        try file.setSlotContent(slot, payload: [UInt8](data), name: URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent)
+    }
     print("\(result.slotsUsed) icon slots, \(result.bytesAdded / 1024) KB of art.")
-    try save(result.file, to: out)
+    try save(file, to: out)
     if let sheetPath = option("--preview") {
         let pages = [SkinSection.home, .play, .data, .numpad, .calculator].filter { plan.styles[$0] != nil }
         let sheet = CGContext(data: nil, width: 328 * pages.count - 8, height: 480, bitsPerComponent: 8, bytesPerRow: 0,

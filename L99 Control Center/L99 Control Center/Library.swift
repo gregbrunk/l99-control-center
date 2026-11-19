@@ -99,11 +99,23 @@ final class Library {
 
     /// An interface install (skin or stock) rewrites all three slots: the factory photo and GIF come back,
     /// and the background holds the skin's Home picture (or nothing, for stock).
-    func interfaceInstalled() {
+    /// `kept` are the items the install carried over.
+    func interfaceInstalled(kept: [ScreenProtocol.Slot: UUID]) {
         for slot in [ScreenProtocol.Slot.photo, .gif] {
-            setOnScreen(slot, items.first(where: { $0.isFactory && $0.slot == slot })?.id)
+            setOnScreen(slot, kept[slot] ?? items.first(where: { $0.isFactory && $0.slot == slot })?.id)
         }
-        setOnScreen(.background, nil)
+        setOnScreen(.background, kept[.background])
+    }
+
+    /// What's on the screen now, to carry over into an install. Factory photo and GIF are skipped:
+    /// the stock file already holds them.
+    func contentToKeep(includeBackground: Bool) -> [SkinStore.KeptItem] {
+        let slots: [ScreenProtocol.Slot] = includeBackground ? [.photo, .gif, .background] : [.photo, .gif]
+        return slots.compactMap { slot in
+            guard let item = item(onScreen[slot]), !(item.isFactory && slot != .background),
+                  let bytes = try? payload(of: item) else { return nil }
+            return SkinStore.KeptItem(slot: slot, id: item.id, name: item.name, payload: bytes)
+        }
     }
 
     func setOnScreen(_ slot: ScreenProtocol.Slot, _ id: UUID?) {

@@ -180,6 +180,27 @@ struct MenuView: View {
     }
 }
 
+/// The cable's state, for the toolbar of every window that needs the cable (Upload, Library, Skins, Recovery).
+struct CableStatus: View {
+    let connected: Bool
+    /// The screen is in bootloader mode for a skin install (it shows up as a different USB device then).
+    var bootloader = false
+
+    var body: some View {
+        Group {
+            if bootloader {
+                Label("Bootloader mode", systemImage: "cable.connector").foregroundStyle(.blue)
+            } else {
+                Label(connected ? "Cable connected" : "Cable not connected",
+                      systemImage: connected ? "cable.connector" : "cable.connector.slash")
+                    .foregroundStyle(connected ? .green : .orange)
+            }
+        }
+        .labelStyle(.titleAndIcon)
+        .padding(.horizontal, 10)   // breathing room inside the toolbar's pill
+    }
+}
+
 /// What a slot holds, as far as the library knows.
 struct SlotThumbnail: View {
     let model: AppModel
@@ -189,7 +210,11 @@ struct SlotThumbnail: View {
         let item = model.library.item(model.library.onScreen[slot])
         VStack(alignment: .leading, spacing: 4) {
             Group {
-                if let item, let image = model.library.thumbnails[item.id] {
+                if slot == .background && model.skins.homeSkinInstalled {
+                    Rectangle().fill(.quaternary)
+                        .overlay(Label("Home skin", systemImage: "paintpalette").labelStyle(.iconOnly).foregroundStyle(.secondary))
+                        .help("A Home skin is on the keyboard, so backgrounds aren't used.")
+                } else if let item, let image = model.library.thumbnails[item.id] {
                     Image(nsImage: image).resizable().interpolation(.medium)
                 } else {
                     Rectangle().fill(.quaternary)

@@ -13,6 +13,21 @@ final class SkinStore {
     var plan: SkinPlan { didSet { save(plan, "skinPlan"); refreshPreviews() } }
     /// The plan on the keyboard now (nil = stock, or unknown before the first install from the app).
     private(set) var installedPlan: SkinPlan?
+    /// When the skin on the keyboard was installed from this app.
+    private(set) var installedDate: Date?
+    /// Called after any install (a skin or stock): it rewrites the screen's picture memory too.
+    @ObservationIgnored var onInstalled: (() -> Void)?
+    /// A skinned Home draws its own full-screen picture, so the background slot belongs to the skin.
+    var homeSkinInstalled: Bool { installedPlan?.styles[.home] != nil }
+
+    /// One line on what's on the keyboard now.
+    var installedSummary: String {
+        guard let p = installedPlan, !p.pages.isEmpty else { return "Stock: AULA's original look" }
+        let styles = Set(p.pages.compactMap { p.styles[$0] })
+        if p.pages.count == Self.pages.count, styles.count == 1, let s = styles.first { return "\(s.displayName) on every page" }
+        let parts = p.pages.compactMap { page in p.styles[page].map { "\(page.displayName): \($0.displayName)" } }
+        return parts.joined(separator: " · ") + (p.pages.count < Self.pages.count ? " · others stock" : "")
+    }
     var selected: SkinSection = .home
 
     static let pages: [SkinSection] = [.home, .play, .data, .numpad, .calculator]
@@ -51,6 +66,13 @@ final class SkinStore {
     }
     private(set) var install: Install = .idle
     private(set) var bootloaderReady = false
+    /// Bootloader mode, as seen while an install is under way (only polled then).
+    var inBootloader: Bool {
+        switch install {
+        case .ready, .waitingForPassword, .installing: bootloaderReady
+        default: false
+        }
+    }
     private(set) var screenNormal = false
     private var pollTimer: Timer?
     private var installProcess: Process?
@@ -58,6 +80,7 @@ final class SkinStore {
     init() {
         plan = Self.load("skinPlan") ?? SkinPlan(styles: [:])
         installedPlan = Self.load("installedSkinPlan")
+        installedDate = UserDefaults.standard.object(forKey: "installedSkinDate") as? Date
         try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
         hasStock = FileManager.default.fileExists(atPath: stockURL.path)
         refreshPreviews()
@@ -182,6 +205,9 @@ final class SkinStore {
                 install = .done(stock: stock)
                 installedPlan = stock ? nil : plan
                 save(installedPlan, "installedSkinPlan")
+                installedDate = Date()
+                UserDefaults.standard.set(installedDate, forKey: "installedSkinDate")
+                onInstalled?()
                 stopPolling()
             case "error":
                 install = .failed(parts.count > 1 ? parts[1] : "The install stopped.")

@@ -19,6 +19,10 @@ struct LibraryView: View {
             Text("Everything you've sent to the screen is kept here, so you can send it again. A blue tag means it's on the screen now.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            if model.skins.homeSkinInstalled {
+                Notice(systemImage: "rectangle.on.rectangle.slash", tint: .orange,
+                       text: "Backgrounds are off while a Home skin is on the keyboard: the skin draws Home itself. Keep Screen › Background on Default on the keyboard. Back to stock in Skins brings backgrounds back.")
+            }
             if items.isEmpty {
                 ContentUnavailableView("Nothing here yet", systemImage: "photo.on.rectangle",
                                        description: Text("Pictures you upload appear here. Factory content can be added from Recovery."))
@@ -49,6 +53,7 @@ struct LibraryView: View {
                 .pickerStyle(.segmented)
                 .frame(width: 340)
             }
+            ToolbarItem(placement: .automatic) { CableStatus(connected: model.devices.screen) }
         }
         .searchable(text: $search, placement: .toolbar)
         .confirmationDialog("Move “\(pendingDelete?.name ?? "")” to the Trash?", isPresented: Binding(
@@ -70,7 +75,9 @@ private struct LibraryCard: View {
     let onDelete: () -> Void
 
     private var isOnScreen: Bool { model.library.onScreen[item.slot] == item.id }
-    private var canTalk: Bool { model.devices.screen && !model.transfer.isBusy }
+    /// A Home skin owns the background slot, so backgrounds can't be sent.
+    private var blocked: Bool { item.slot == .background && model.skins.homeSkinInstalled }
+    private var canTalk: Bool { model.devices.screen && !model.transfer.isBusy && !blocked }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -87,14 +94,21 @@ private struct LibraryCard: View {
                 HStack {
                     Tag(text: item.slot.displayName, background: .white.opacity(0.92), foreground: .black)
                     Spacer()
-                    if isOnScreen { Tag(text: "On screen", background: .accentColor, foreground: .white) }
+                    if blocked {
+                        Tag(text: "Off", background: .black.opacity(0.7), foreground: .white)
+                    } else if isOnScreen {
+                        Tag(text: "On screen", background: .accentColor, foreground: .white)
+                    }
                 }
                 .padding(6)
             }
+            .saturation(blocked ? 0 : 1)
+            .opacity(blocked ? 0.5 : 1)
             Text(item.name).font(.callout.weight(.semibold)).lineLimit(1)
             Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             Button("Send") { model.transfer.send(item) }
                 .disabled(!canTalk)
+                .help(blocked ? "Backgrounds don't show while a Home skin is installed." : "")
                 .controlSize(.small)
         }
         .padding(10)
@@ -124,6 +138,8 @@ private struct Tag: View {
     var body: some View {
         Text(text)
             .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .fixedSize()
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(background, in: RoundedRectangle(cornerRadius: 4))

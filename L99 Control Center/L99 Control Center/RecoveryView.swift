@@ -22,6 +22,7 @@ struct RecoveryView: View {
         .padding(18)
         .frame(width: 640)
         .fixedSize(horizontal: false, vertical: true)
+        .toolbar { ToolbarItem(placement: .automatic) { CableStatus(connected: model.devices.screen) } }
     }
 
     // MARK: Interrupted upload
@@ -64,6 +65,11 @@ struct RecoveryView: View {
                 Toggle("Photo frame: the mascot", isOn: $restorePhoto)
                 Toggle("Animation: the factory GIF (26 MB)", isOn: $restoreAnimation)
                 Toggle("Background: factory wallpaper 1", isOn: $restoreBackground)
+                    .disabled(model.skins.homeSkinInstalled)
+                if model.skins.homeSkinInstalled {
+                    Text("Off while a Home skin is on the keyboard. Back to stock in Skins brings backgrounds back.")
+                        .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                }
                 Text("The keyboard's own default background is built in and isn't stored in the background slot, so a factory wallpaper is the closest match.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -87,7 +93,7 @@ struct RecoveryView: View {
     private func restore() {
         var queue = [LibraryItem]()
         if restorePhoto, let item = factoryItems[.photo]?.first { queue.append(item) }
-        if restoreBackground, let item = factoryItems[.background]?.first(where: { $0.name.hasSuffix("1") }) { queue.append(item) }
+        if restoreBackground, !model.skins.homeSkinInstalled, let item = factoryItems[.background]?.first(where: { $0.name.hasSuffix("1") }) { queue.append(item) }
         if restoreAnimation, let item = factoryItems[.gif]?.first { queue.append(item) }
         model.transfer.send(queue)
     }

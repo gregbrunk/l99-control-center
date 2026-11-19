@@ -125,17 +125,20 @@ struct UploadView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Destination", selection: $upload.slot) {
-                    ForEach(ScreenProtocol.Slot.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    ForEach(ScreenProtocol.Slot.allCases, id: \.self) { slot in
+                        Text(slot.displayName).tag(slot)
+                            .selectionDisabled(slot == .background && model.skins.homeSkinInstalled)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 300)
-                .onChange(of: upload.slot) { upload.slotChanged() }
+                .onChange(of: upload.slot) {
+                    if upload.slot == .background && model.skins.homeSkinInstalled { upload.slot = .photo }
+                    upload.slotChanged()
+                }
             }
             ToolbarItem(placement: .automatic) {
-                Label(model.devices.screen ? "Cable connected" : "Cable not connected",
-                      systemImage: model.devices.screen ? "cable.connector" : "cable.connector.slash")
-                    .labelStyle(.titleAndIcon)
-                    .foregroundStyle(model.devices.screen ? .green : .orange)
+                CableStatus(connected: model.devices.screen)
             }
         }
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: SourceImage.supportedTypes) { result in
@@ -183,6 +186,10 @@ struct UploadView: View {
             Text("Replaces what's in the \(upload.slot.displayName.lowercased()) slot. Everything you send stays in your Library.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if model.skins.homeSkinInstalled {
+                Text("Background is off: the Home skin on the keyboard draws Home itself.")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
             Spacer()
         }
         .padding(20)
@@ -327,6 +334,7 @@ struct UploadView: View {
 
     private var canUpload: Bool {
         guard upload.source != nil, model.devices.screen, !model.transfer.isBusy, upload.preparing == nil else { return false }
+        if upload.slot == .background && model.skins.homeSkinInstalled { return false }
         return upload.isGIF || upload.still != nil
     }
 

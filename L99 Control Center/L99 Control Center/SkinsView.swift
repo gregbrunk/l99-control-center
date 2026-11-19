@@ -17,6 +17,7 @@ struct SkinsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 900, minHeight: 660)
+        .toolbar { ToolbarItem(placement: .automatic) { CableStatus(connected: model.devices.screen, bootloader: store.inBootloader) } }
         .sheet(isPresented: $showingInstall) { InstallSheet(store: store, isPresented: $showingInstall) }
     }
 
@@ -26,6 +27,7 @@ struct SkinsView: View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    installedCard
                     HStack {
                         Text("Style for each page").font(.headline)
                         Spacer()
@@ -48,6 +50,25 @@ struct SkinsView: View {
             Divider()
             footer.padding(16)
         }
+    }
+
+    /// What's on the keyboard now, from the last install made with this app.
+    private var installedCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("On the keyboard", systemImage: store.installedPlan == nil ? "keyboard" : "checkmark.seal.fill")
+                .font(.caption.weight(.semibold)).foregroundStyle(store.installedPlan == nil ? Color.secondary : .green)
+            Text(store.installedSummary).font(.callout.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+            if let date = store.installedDate, store.installedPlan != nil {
+                Text("Installed \(date.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
+            }
+            if store.homeSkinInstalled {
+                Text("The Home skin replaces backgrounds. On the keyboard, keep Screen › Background on Default; Customization puts an old background behind the top bar.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func styleMenu(_ selection: SkinStyle?, stockLabel: String, set: @escaping (SkinStyle?) -> Void) -> some View {
@@ -370,7 +391,10 @@ enum DebugSnapshot {
         let model = AppModel()
         if let j = args.firstIndex(of: "--select"), j + 1 < args.count, let page = SkinSection(rawValue: args[j + 1]) { model.skins.selected = page }
         let window = NSWindow(contentRect: NSRect(x: -3000, y: 0, width: 980, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
-        let host = NSHostingView(rootView: SkinsView(model: model).background(Color(nsColor: .windowBackgroundColor)))
+        let root: AnyView = args.contains("--library")
+            ? AnyView(LibraryView(model: model).background(Color(nsColor: .windowBackgroundColor)))
+            : AnyView(SkinsView(model: model).background(Color(nsColor: .windowBackgroundColor)))
+        let host = NSHostingView(rootView: root)
         window.contentView = host
         window.orderFrontRegardless()
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) {

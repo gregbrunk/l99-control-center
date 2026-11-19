@@ -97,6 +97,15 @@ final class Library {
         setOnScreen(item.slot, item.id)
     }
 
+    /// An interface install (skin or stock) rewrites all three slots: the factory photo and GIF come back,
+    /// and the background holds the skin's Home picture (or nothing, for stock).
+    func interfaceInstalled() {
+        for slot in [ScreenProtocol.Slot.photo, .gif] {
+            setOnScreen(slot, items.first(where: { $0.isFactory && $0.slot == slot })?.id)
+        }
+        setOnScreen(.background, nil)
+    }
+
     func setOnScreen(_ slot: ScreenProtocol.Slot, _ id: UUID?) {
         onScreen[slot] = id
         let map = Dictionary(uniqueKeysWithValues: onScreen.map { ($0.key.rawValue, $0.value) })

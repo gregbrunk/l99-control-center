@@ -27,6 +27,7 @@ final class AppModel {
         keyboard = KeyboardLink(devices: devices, transfer: transfer, settings: settings, weather: weather)
         devices.onChange = { [weak keyboard] in keyboard?.connectionChanged() }
         skins.fahrenheit = settings.usUnits
+        skins.onInstalled = { [weak library] in library?.interfaceInstalled() }
     }
 
     /// One switch for the live data and the skin's Data page label.

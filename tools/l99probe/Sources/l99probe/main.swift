@@ -421,7 +421,8 @@ func skinFile() throws {
     switch args.first {
     case "blue-1": try skinBlue1()
     case "layout-test": try skinLayoutTest()
-    default: throw LinkError("skin-file needs: blue-1 or layout-test")
+    case "topbar-test": try skinTopBarTest()
+    default: throw LinkError("skin-file needs: blue-1, layout-test or topbar-test")
     }
 }
 
@@ -429,8 +430,12 @@ func skinFile() throws {
 /// style. Proves moved/resized touch areas and new-size art stored after the project.
 func skinLayoutTest() throws {
     let out = option("--out") ?? projectRoot.appendingPathComponent("build/UartTFT-II_Flash-layout-test.bin").path
-    try FileManager.default.createDirectory(at: URL(fileURLWithPath: out).deletingLastPathComponent(), withIntermediateDirectories: true)
     var file = try InterfaceFile(stockFile: factoryFile)
+    try applyLayoutTest(&file)
+    try save(file, to: out)
+}
+
+func applyLayoutTest(_ file: inout InterfaceFile) throws {
     let page = 21
     let buttons = try file.touchButtons(page: page)
     // (code, label, kind, column, row); row 4 is the full-width 0.
@@ -453,6 +458,55 @@ func skinLayoutTest() throws {
                                pixels: SkinArt.key(label, kind: kind, pressed: pressed, width: w, height: h, style: SkinArt.softDark))
         }
     }
+}
+
+/// The custom Numpad (as installed) plus a redesigned top bar on the Calculator page only. Every other
+/// page keeps the stock top bar, so this shows whether one page can have its own copy.
+func skinTopBarTest() throws {
+    let out = option("--out") ?? projectRoot.appendingPathComponent("build/UartTFT-II_Flash-topbar-test.bin").path
+    var file = try InterfaceFile(stockFile: factoryFile)
+    try applyLayoutTest(&file)
+    let page = 22
+    let free = Set(try file.emptySlots())
+    // Empty slots that no record refers to (checked against the catalog), in runs as the records need them.
+    // Clock and battery % share one digit set: 481–490 digits, 491–494 the clock's colon frames.
+    let slots = (digits: 481, colons: 491, connection: 541, num: 497, battery: 450, caps: 458, lock: 460, os: 462, percent: 466)
+    for id in Array(481...494) + [497, 498] + Array(541...545) + Array(450...456) + Array(458...463) + [466] where !free.contains(id) {
+        throw LinkError("Icon slot \(id) isn't empty. Stopped.")
+    }
+    func place(_ id: Int, _ w: Int, _ h: Int, _ px: [UInt16]) throws { try file.placeIcon(id, width: w, height: h, pixels: px) }
+    typealias A = TopBarArt
+    // Stock state order: Num 1 / 2, Caps 3 (off) / 4 (on), Lock 5 (locked) / 6, OS 7 WIN / 8 MAC.
+    // Num Lock never turns on from a Mac and the keyboard has no Num Lock key, so its chip is hidden.
+    let capsW = A.chipWidth(["Caps"]), lockW = 22, osW = A.chipWidth(["WIN", "MAC"])
+    try place(slots.num, 1, 1, A.blank()); try place(slots.num + 1, 1, 1, A.blank())
+    try place(slots.caps, capsW, A.chipH, A.chip("Caps", on: false, width: capsW))
+    try place(slots.caps + 1, capsW, A.chipH, A.chip("Caps", on: true, width: capsW))
+    try place(slots.lock, lockW, A.chipH, A.lockChip(closed: true, width: lockW))
+    try place(slots.lock + 1, lockW, A.chipH, A.lockChip(closed: false, width: lockW))
+    try place(slots.os, osW, A.chipH, A.chip("WIN", on: false, width: osW))
+    try place(slots.os + 1, osW, A.chipH, A.chip("MAC", on: false, width: osW))
+    for m in 0..<5 { try place(slots.connection + m, A.connW, A.connH, A.connection(m)) }
+    for b in 0..<7 { try place(slots.battery + b, A.batW, A.batH, A.battery(b)) }
+    for d in 0..<10 { try place(slots.digits + d, A.digitW, A.digitH, A.digit(d)) }
+    for k in 0..<4 { try place(slots.colons + k, A.digitW, A.digitH, A.colon()) }
+    try place(slots.percent, A.pctW, A.digitH, A.percent())
+    // Layout: clock, connection, chips on the left; battery % and cell on the right.
+    try file.setClock(page: page, x: 12, y: 10, first: slots.digits)
+    try file.setIndicator(page: page, using: 9, x: 58, y: 8, first: slots.connection)
+    try file.setIndicator(page: page, using: 1, x: 0, y: 0, first: slots.num)
+    var x = 110
+    try file.setIndicator(page: page, using: 3, x: x, y: 9, first: slots.caps); x += capsW + 4
+    try file.setIndicator(page: page, using: 5, x: x, y: 9, first: slots.lock); x += lockW + 4
+    try file.setIndicator(page: page, using: 7, x: x, y: 9, first: slots.os)
+    try file.setDigits(page: page, variable: 6, x: 268, y: 10, first: slots.digits)
+    try file.setIndicator(page: page, using: 21, x: 269, y: 10, first: slots.percent)
+    try file.setIndicator(page: page, using: 14, x: 283, y: 10, first: slots.battery)
+    try save(file, to: out)
+}
+
+func save(_ file: InterfaceFile, to out: String) throws {
+    try FileManager.default.createDirectory(at: URL(fileURLWithPath: out).deletingLastPathComponent(), withIntermediateDirectories: true)
     let crc = try file.write(to: out)
     for line in file.log { print("  " + line) }
     let changed = file.changedRanges().reduce(0) { $0 + $1.count }

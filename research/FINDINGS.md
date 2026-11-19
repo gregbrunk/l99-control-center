@@ -321,6 +321,38 @@ Built with `l99probe skin-file layout-test` and installed with `isp-flash --dire
   - Art beyond the stock project end is read, once the size field covers it.
   - **Layouts are open, within the screen's existing key actions.** Adding or removing records (changing a page's record length) is still untested.
 
+## A top bar for one page only (Nov 19): PROVEN [HW]
+
+Built with `l99probe skin-file topbar-test`, which also keeps the custom Numpad above, and installed twice with `isp-flash --direct` (≈260 s each, every read-back report matched).
+
+**Top-bar records on each page** (our decode; display records have a 5-byte header: `type u16, param u16, length u8`):
+
+| Record | Payload | Stock |
+|---|---|---|
+| Type 3 state icon (len 14) | `id, x, y, first icon, last icon (FFFF = single), 0, source` | Num 1–2 @186,10 · Caps 3–4 @160 · Lock 5–6 @135 · WIN/MAC 7–8 @84 · connection 9–13 @109 · "%" 21 @256,14 · battery 14–20 @277,11 |
+| Type 4 number (len 14) | `variable u16, flags u8, x u16 (right edge), y u16, digits u8, 2 bytes, first icon, last icon` | battery % (variable 6): right edge 253, y 12, icons 30–39 |
+| Type 6 clock (len 9) | `x, y, first icon, last icon, glyphs u8` | (12, 10), icons 30–43 (digits 0–9, then four colon frames), 5 glyphs |
+
+Record ids repeat on a page (two id-7 records on Home), so the writer finds an indicator by the first icon it uses now.
+
+**What changed:**
+- On the Calculator (page 22) only, every top-bar record was moved and pointed at new art in empty icon slots: clock and battery % share digits 481–490, the colons are 491–494, connection 541–545, Caps 458–459, Lock 460–461, WIN/MAC 462–463, "%" 466, battery 450–456.
+- Num 497–498 is a transparent 1×1 image, which hides the indicator without removing its record.
+- Digits are 8×14 instead of 11×17.
+
+**Result (Alison's photos):**
+- The Calculator shows the new bar in its new layout. Every other page keeps the stock bar.
+- Caps toggles. The battery % sits right-aligned at its new right edge, and the charging state shows. The clock uses the new 8-px digits with correct spacing (so glyph spacing follows icon width).
+- The keyboard has no Num Lock key, and the Numpad screen's Num key doesn't light the stock Num indicator either.
+- So each page can have its own top bar: the art, positions, sizes and hiding are all controlled by that page's own records.
+
+**Icon slots are the limit.**
+- Only **80** slots are empty (0×0 in both banks) and not mentioned by any record, alone or inside a range. A further 83 empty slots fall inside ranges of record types we haven't decoded, so they're unconfirmed.
+- Some slots that look unused aren't empty: e.g. 513 and 563 hold other data (formats 8 and 0x9C).
+- One top-bar copy takes 31 slots in runs: 14 for clock digits plus colons, 7 battery, 5 connection, three pairs, one "%".
+- Free runs: 481–495 (the only one with ≥14), 541–549, 450–456, 458–463, 466–471, 514–519, 371–376, 555–559, plus shorter ones.
+- So with confirmed-free slots: one complete extra copy, plus about one more that shares the digits. Decoding the other record types (`d` 1/5/8/11/16, `t` 0x8003–0xC00B) would confirm more slots.
+
 ## Mac-install test (Nov 18): screen ignores writes to the interface area [HW]
 
 The upload command `0x64` at `0x00760000` (block `0x3B`, Numpad art) gets no reply at all, on two tries. The photo slot right afterwards takes 151/151 writes with matching CRCs. **Interface-file changes (skins, layouts) install only through AULA's Windows tool.** Details are in MAC_INSTALL_TEST.md. This answers the "upload address = file offset" hypothesis in the screen catalog section: the addresses match, but the firmware only accepts writes into its slots.

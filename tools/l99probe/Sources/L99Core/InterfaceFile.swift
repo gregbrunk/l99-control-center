@@ -185,6 +185,116 @@ public struct InterfaceFile {
         log.append("page \(page) button \(code): (\(b.x1),\(b.y1))–(\(b.x2),\(b.y2)) → (\(x),\(y))–(\(x + width - 1),\(y + height - 1))")
     }
 
+    // MARK: Display records (indicators and digit widgets)
+
+    /// A display record: 5-byte header (`type u16, param u16, length u8`) then the payload.
+    public struct DisplayRecord: Equatable, Sendable {
+        public let offset: Int, type: Int, length: Int
+    }
+
+    public func displayRecords(page: Int) throws -> [DisplayRecord] {
+        guard (0..<Self.pageCount).contains(page) else { throw Failure.refused("No page \(page)") }
+        let e = pageTable + page * 12
+        var p = Int(Self.u32(bytes, e)); let end = p + Self.u16(bytes, e + 4)
+        var out = [DisplayRecord]()
+        while p < end {
+            let len = Int(bytes[p + 4] & 0x7F)
+            out.append(DisplayRecord(offset: p + 5, type: Self.u16(bytes, p), length: len))
+            p += 5 + len
+        }
+        guard p == end else { throw Failure.refused("Page \(page)'s display records don't add up. Stopped.") }
+        return out
+    }
+
+    /// A state icon (type 3): `id, x, y, first icon, last icon, …`. One icon per state, first…last.
+    public struct Indicator: Equatable, Sendable { public let offset: Int, id: Int, x: Int, y: Int, first: Int, last: Int }
+
+    public func indicators(page: Int) throws -> [Indicator] {
+        try displayRecords(page: page).filter { $0.type == 3 && $0.length == 14 }.map { r in
+            let w = (0..<5).map { Self.u16(bytes, r.offset + 2 * $0) }
+            return Indicator(offset: r.offset, id: w[0], x: w[1], y: w[2], first: w[3], last: w[4] == 0xFFFF ? w[3] : w[4])
+        }
+    }
+
+    /// A number drawn from digit icons (type 4): `variable u16, flags u8, x u16 (right edge), y u16,
+    /// digits u8, …, first digit icon u16 (0), last u16 (9)`.
+    public struct DigitWidget: Equatable, Sendable { public let offset: Int, variable: Int, x: Int, y: Int, first: Int, last: Int }
+
+    public func digitWidgets(page: Int) throws -> [DigitWidget] {
+        try displayRecords(page: page).filter { $0.type == 4 && $0.length == 14 }.map { r in
+            DigitWidget(offset: r.offset, variable: Self.u16(bytes, r.offset), x: Self.u16(bytes, r.offset + 3), y: Self.u16(bytes, r.offset + 5),
+                        first: Self.u16(bytes, r.offset + 10), last: Self.u16(bytes, r.offset + 12))
+        }
+    }
+
+    /// Icons a record may point at must already hold art (placed first).
+    func checkHasArt(_ ids: ClosedRange<Int>) throws {
+        for id in ids {
+            let a = try icon(id, bank: 0), b = try icon(id, bank: 1)
+            guard a.width > 0, a.height > 0, a == b else { throw Failure.refused("Icon \(id) has no art yet (or differs between banks); place it first") }
+        }
+    }
+
+    /// Moves a page's state icon (found by the first icon it uses now, which is unique; ids repeat)
+    /// and points it at new icons, keeping the same number of states.
+    /// Only this page changes, so other pages keep the shared stock icons.
+    public mutating func setIndicator(page: Int, using current: Int, x: Int, y: Int, first: Int) throws {
+        let all = try indicators(page: page).filter { $0.first == current }
+        guard all.count == 1, let r = all.first else { throw Failure.refused("Page \(page) has \(all.count) indicators using icon \(current); expected 1") }
+        let id = r.id
+        let n = r.last - r.first, last = first + n
+        guard x >= 0, y >= 0, x < 320, y < 480 else { throw Failure.refused("Indicator \(id): (\(x), \(y)) is off screen") }
+        try checkHasArt(first...last)
+        let single = Self.u16(bytes, r.offset + 8) == 0xFFFF
+        put16(r.offset + 2, x); put16(r.offset + 4, y); put16(r.offset + 6, first)
+        if !single { put16(r.offset + 8, last) }
+        allowed.append((r.offset + 2)..<(r.offset + 10))
+        log.append("page \(page) indicator \(id): icons \(r.first)–\(r.last) at (\(r.x),\(r.y)) → \(first)–\(last) at (\(x),\(y))")
+    }
+
+    /// Moves a page's digit widget for `variable` and points it at ten new digit icons (0…9).
+    public mutating func setDigits(page: Int, variable: Int, x: Int, y: Int, first: Int) throws {
+        let all = try digitWidgets(page: page).filter { $0.variable == variable }
+        guard all.count == 1, let r = all.first else { throw Failure.refused("Page \(page) has \(all.count) digit widgets for 0x\(String(variable, radix: 16)); expected 1") }
+        guard r.last - r.first == 9 else { throw Failure.refused("Digit widget 0x\(String(variable, radix: 16)) doesn't use ten icons; not changing it") }
+        guard x > 0, y >= 0, x < 320, y < 480 else { throw Failure.refused("Digits: (\(x), \(y)) is off screen") }
+        try checkHasArt(first...(first + 9))
+        put16(r.offset + 3, x); put16(r.offset + 5, y); put16(r.offset + 10, first); put16(r.offset + 12, first + 9)
+        allowed.append((r.offset + 3)..<(r.offset + 7)); allowed.append((r.offset + 10)..<(r.offset + 14))
+        log.append("page \(page) digits 0x\(String(variable, radix: 16)): icons \(r.first)–\(r.last) right edge (\(r.x),\(r.y)) → \(first)–\(first + 9) at (\(x),\(y))")
+    }
+
+    /// The top-bar clock (type 6): `x u16, y u16, first icon u16, last icon u16, glyphs u8`.
+    /// Stock: (12, 10), icons 30–43 (digits 0–9 then four colon frames), 5 glyphs "HH:MM".
+    public struct Clock: Equatable, Sendable { public let offset: Int, x: Int, y: Int, first: Int, last: Int, glyphs: Int }
+
+    public func clocks(page: Int) throws -> [Clock] {
+        try displayRecords(page: page).filter { $0.type == 6 && $0.length == 9 }.map { r in
+            Clock(offset: r.offset, x: Self.u16(bytes, r.offset), y: Self.u16(bytes, r.offset + 2),
+                  first: Self.u16(bytes, r.offset + 4), last: Self.u16(bytes, r.offset + 6), glyphs: Int(bytes[r.offset + 8]))
+        }
+    }
+
+    /// Moves a page's clock and points it at a new run of icons (same count as now).
+    public mutating func setClock(page: Int, x: Int, y: Int, first: Int) throws {
+        let all = try clocks(page: page)
+        guard all.count == 1, let r = all.first else { throw Failure.refused("Page \(page) has \(all.count) clocks; expected 1") }
+        guard x >= 0, y >= 0, x < 320, y < 480 else { throw Failure.refused("Clock: (\(x), \(y)) is off screen") }
+        let last = first + (r.last - r.first)
+        try checkHasArt(first...last)
+        put16(r.offset, x); put16(r.offset + 2, y); put16(r.offset + 4, first); put16(r.offset + 6, last)
+        allowed.append(r.offset..<(r.offset + 8))
+        log.append("page \(page) clock: icons \(r.first)–\(r.last) at (\(r.x),\(r.y)) → \(first)–\(last) at (\(x),\(y))")
+    }
+
+    /// Icon slots with no art (0×0) in both banks. Whether a record still refers to one is the caller's check.
+    public func emptySlots() throws -> [Int] {
+        try (0..<iconCount).filter { id in
+            let a = try icon(id, bank: 0), b = try icon(id, bank: 1)
+            return a.width == 0 && a.height == 0 && a.size == 0 && b == a
+        }
+    }
+
     // MARK: Checking and saving
 
     /// Every changed byte range, merged.

@@ -22,6 +22,22 @@ usage: l99probe <command> [options]
   ui-block-test stock|blue      Mac skin-install test (research/MAC_INSTALL_TEST.md). Rewrites ONLY block 0x3B
                                 (Mini Numpad key art): "stock" = the stock bytes (steps A and C), "blue" = the
                                 Numpad "1" key tinted blue (step B). Run only after the Windows restore test passed.
+  memory-map                    READ-ONLY map of the screen's runtime memory (FINDINGS.md, "Mac-driven screen
+                                research"). Reads words 0x0000–0x0FFF and 0x7000–0x703F (03 reads only, never a
+                                write), before and after two stats packets with marker values, and reports where
+                                each stats field lands. Saves l99probe-memory-map.json.
+  Bootloader (cable; keyboard in bootloader mode via Fn, X, 0, 6; research/ISP_PROTOCOL.md):
+  isp-probe                     READ-ONLY: handshake + flash ID. Writes nothing. Checks the screen matches the capture.
+                                Use --direct (with sudo) for every isp command: the serial path is unreliable and
+                                allows only one isp command per bootloader entry
+  isp-flash <file>|--factory    Install a whole interface file (UartTFT-II_Flash.bin format), about 5 minutes, then
+                                restart the screen. Never touches the control program (HFD_Code). --dry-run builds
+                                and checks every packet without opening the port; --setup-only runs the handshakes,
+                                interface select and flash ID, then stops before writing
+  isp-restart                   Leave bootloader mode (4F 08008000) without writing anything
+  --direct                      (isp-*) Talk to the screen's USB endpoints directly instead of through macOS's
+                                serial driver. Needs sudo; the device is handed back to macOS afterwards
+
   clock                         Set the keyboard clock (op 0x28, time only)
   stats                         Clock + distinctive test stats (CPU 42%/61°, GPU 17%/55°, 23° / 27° / 12°, 45%)
   music gavindi|axira           5-second test sweep on the Play page, in one of the two candidate layouts
@@ -52,6 +68,7 @@ func option(_ name: String) -> String? {
 let verbose = flag("--verbose")
 let dryRun = flag("--dry-run")
 let assumeYes = flag("--yes")
+let directUSB = flag("--direct")
 let offsetMinutes = Int(option("--offset-min") ?? "0") ?? 0
 let musicSeconds = min(30, max(1, Double(option("--seconds") ?? "5") ?? 5))
 
@@ -270,6 +287,78 @@ func sendGIF(_ blob: [UInt8], label: String) throws {
     print("Now leave the GIF page and open it again to see it.")
 }
 
+func memoryMap() throws {
+    let plan = RuntimeMemory.plan()
+    var r = now()
+    RuntimeMemory.applyMarkers(&r, second: false)
+    let sendA = try KeyboardProtocol.realtime(r)
+    RuntimeMemory.applyMarkers(&r, second: true)
+    let sendB = try KeyboardProtocol.realtime(r)
+    print("Memory map: \(plan.count) reads of up to \(RuntimeMemory.maxWords) words per snapshot, 3 snapshots. Reads only; nothing is written to the screen.")
+    print("Marker values A / B:", RuntimeMemory.fields.map { "\($0.name) \($0.a)/\($0.b)" }.joined(separator: ", "))
+    if dryRun {
+        print("First read frame:", try RuntimeMemory.readFrame(address: plan[0].address, count: plan[0].count).hex)
+        print("Last read frame: ", try RuntimeMemory.readFrame(address: plan.last!.address, count: plan.last!.count).hex)
+        print("Stats packet A:"); printReports(sendA)
+        return
+    }
+    guard confirm("Keyboard on the cable and switched on, Real-time Data page open on the screen, L99 Control Center and AULA's driver closed. Start?") else { print("Cancelled."); return }
+    let port = try ScreenPort()
+    port.verbose = verbose
+    let kb = try WiredKeyboard()
+    kb.verbose = verbose
+    print("Screen port: \(port.path)")
+
+    let frozenHint = "Nothing was written. If the screen is frozen, switch the keyboard off and on."
+    do { _ = try port.readWords(address: 0, count: RuntimeMemory.maxWords) }
+    catch { throw LinkError("The screen didn't answer the first memory read: \(error). \(frozenHint) Stopped before any more reads.") }
+    print("First read answered. Mapping…")
+
+    func snapshot(_ label: String) throws -> [UInt16: UInt16] {
+        var s = [UInt16: UInt16]()
+        for (i, step) in plan.enumerated() {
+            do {
+                let words = try port.readWords(address: step.address, count: step.count)
+                for (k, v) in words.enumerated() { s[step.address + UInt16(k)] = v }
+            } catch {
+                throw LinkError(String(format: "Read %d of %d (%@, 0x%04X) failed: %@. %@", i + 1, plan.count, label, step.address, "\(error)", frozenHint))
+            }
+        }
+        print("  \(label): \(s.count) words, \(s.values.filter { $0 != 0 }.count) non-zero")
+        return s
+    }
+    let before = try snapshot("before")
+    try kb.send(sendA); Thread.sleep(forTimeInterval: 2)
+    let a = try snapshot("markers A")
+    try kb.send(sendB); Thread.sleep(forTimeInterval: 2)
+    let b = try snapshot("markers B")
+    try kb.send(KeyboardProtocol.realtime(now()))          // back to the real time, no test stats
+
+    let matches = RuntimeMemory.matches(a: a, b: b)
+    print("\nWhere each stats field landed:")
+    for f in RuntimeMemory.fields {
+        let m = matches.filter { $0.field == f.name }
+        print("  \(f.name):", m.isEmpty ? "not found" : m.map { String(format: "0x%04X (%@)", $0.address, $0.part) }.joined(separator: ", "))
+    }
+    let changedAB = a.keys.sorted().filter { a[$0] != b[$0] }
+    let changedBefore = before.keys.sorted().filter { before[$0] != a[$0] }
+    print("\nWords that changed between A and B: \(changedAB.count)")
+    for k in changedAB.prefix(60) { print(String(format: "  0x%04X: %04X → %04X", k, a[k]!, b[k]!)) }
+    print("Words that changed between before and A: \(changedBefore.count)")
+
+    func hexMap(_ s: [UInt16: UInt16]) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: s.filter { $0.value != 0 }.map { (String(format: "%04X", $0.key), String(format: "%04X", $0.value)) })
+    }
+    let report: [String: Any] = [
+        "before": hexMap(before), "markersA": hexMap(a), "markersB": hexMap(b),
+        "matches": matches.map { ["field": $0.field, "address": String(format: "%04X", $0.address), "part": $0.part] },
+        "markers": RuntimeMemory.fields.map { ["field": $0.name, "a": $0.a, "b": $0.b] },
+    ]
+    let out = FileManager.default.currentDirectoryPath + "/l99probe-memory-map.json"
+    try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: out))
+    print("\nSaved \(out). The clock was set back to the real time.")
+}
+
 func uiBlockTest() throws {
     guard let name = args.first, let variant = InterfaceBlockTest.Variant(rawValue: name) else {
         throw LinkError("ui-block-test needs stock or blue")
@@ -322,6 +411,78 @@ func uiBlockTest() throws {
     print("Open the Mini Numpad page (leave and re-enter it if it was open). If nothing changed, switch the keyboard off and on and look again.")
 }
 
+// MARK: Bootloader (ISP)
+
+func bootloaderPrompt() -> Bool {
+    print("The screen must show \"Bootloader V2.30.156, Flash ID: GD5F1GQ4\" (Fn, X, 0, 6 with the cable plugged in).")
+    return confirm("Is it showing that now?")
+}
+
+func ispProbe() throws {
+    guard bootloaderPrompt() else { print("Cancelled."); return }
+    let port = try BootloaderPort(directUSB: directUSB); port.verbose = verbose
+    if let t = option("--wait"), let s = Double(t) { port.handshakeTimeout = s }
+    print("Port: \(port.path)")
+    try port.probe()
+    print(String(format: "OK: handshake authenticated with key %08X, info bytes and flash ID (GD5F1GQ4) match the capture.", ISP.key))
+    print("Nothing was written. The screen is still in the bootloader; run isp-restart --direct to return it to normal.")
+    if !directUSB { print("Serial path: unplug the cable for 5 s and plug it back in before the next isp command.") }
+}
+
+func ispRestart() throws {
+    guard bootloaderPrompt() else { print("Cancelled."); return }
+    let port = try BootloaderPort(directUSB: directUSB); port.verbose = verbose
+    try port.restart()
+    print("Sent restart (4F 08008000). The screen should return to normal within a few seconds.")
+}
+
+func ispFlash() throws {
+    setvbuf(stdout, nil, _IOLBF, 0)     // progress shows up live when logged to a file
+    let setupOnly = flag("--setup-only")
+    let path: String
+    if flag("--factory") { path = factoryFile }
+    else if let p = args.first { path = (p as NSString).expandingTildeInPath }
+    else { throw LinkError("isp-flash needs a file or --factory") }
+    guard let data = FileManager.default.contents(atPath: path) else { throw LinkError("Cannot read \(path)") }
+    let image = try ISP.Image(Array(data))
+    let isStock = image.crc == 0x4DEE_F87B && image.bytes.count == 127_599_044
+    print(String(format: "File: %@\n  %d bytes, CRC32 %08X, %d chunks of 2 KB%@", path, image.bytes.count, image.crc, image.chunkCount,
+                 isStock ? " (the stock factory file)" : ""))
+    if dryRun {
+        var total = 0
+        for i in 0..<image.chunkCount { total += image.packet(i).count }
+        print("Dry run: built all \(image.chunkCount) data packets (\(total) bytes). Nothing opened or sent.")
+        print("Sequence: 4B 30, 4B 32, 6D, 6F 02, 6C × \(image.chunkCount), 6E, 4F")
+        return
+    }
+    print("""
+    This replaces the screen's whole interface area (about 5 minutes). Keyboard functions and the
+    control program are not touched. Keep the cable in and don't touch the screen until it says done.
+    If it fails, the screen stays in bootloader mode: run this again, or use the PC reset tool.
+    """)
+    guard bootloaderPrompt(), confirm("Install this file now?") else { print("Cancelled."); return }
+    let port = try BootloaderPort(directUSB: directUSB); port.verbose = verbose
+    print("Port: \(port.path)")
+    if !port.info.isEmpty { print("  \(port.info)") }
+    let start = Date()
+    var lastShown = -1
+    let result = try port.install(image, setupOnly: setupOnly) { phase, done, total in
+        let pct = done * 100 / max(total, 1)
+        guard pct != lastShown else { return }
+        lastShown = pct
+        print(String(format: "  %@ %3d%%  (%.0f s)", phase == .writing ? "writing  " : "verifying", pct, Date().timeIntervalSince(start)))
+    }
+    guard let final = result else {
+        print("Setup-only: handshakes, interface select and flash ID all OK. Stopped before 6F and before writing. Nothing was written.")
+        print("The screen is still in the bootloader; run isp-restart --direct to return it to normal.")
+        if !directUSB { print("Serial path: unplug the cable for 5 s and plug it back in before the next run.") }
+        return
+    }
+    print(String(format: "Done in %.0f s. Every read-back report matched the file. Final screen value %08X%@.", Date().timeIntervalSince(start), final,
+                 isStock ? (final == ISP.stockFinalValue ? " (same as the PC restore)" : String(format: " (the PC restore gave %08X)", ISP.stockFinalValue)) : ""))
+    print("Sent restart. The screen should come back on its own; if it stays dark, switch the keyboard off and on.")
+}
+
 // MARK: Dispatch
 
 do {
@@ -344,6 +505,10 @@ do {
         guard flag("--factory") else { throw LinkError("gif needs --factory") }
         try sendGIF(try Images.factoryGIF(flashFile: factoryFile), label: "factory animation")
     case "ui-block-test": try uiBlockTest()
+    case "memory-map": try memoryMap()
+    case "isp-probe": try ispProbe()
+    case "isp-flash": try ispFlash()
+    case "isp-restart": try ispRestart()
     case "dongle-info": try dongleInfo()
     case "dongle-clock": try dongleClock(.prior, stats: false)
     case "dongle-stats":

@@ -22,13 +22,14 @@ public enum Checksum {
 
     /// The screen's region checksum (reply to command 0x66):
     /// reflected poly 0xEDB88320, init 0, no final XOR.
-    public static func crc32Screen<C: Collection>(_ bytes: C) -> UInt32 where C.Element == UInt8 {
+    /// `initial` continues a running CRC over consecutive pieces.
+    public static func crc32Screen<C: Collection>(_ bytes: C, initial: UInt32 = 0) -> UInt32 where C.Element == UInt8 {
         if let fast: UInt32 = bytes.withContiguousStorageIfAvailable({ buffer in
-            var c: UInt32 = 0
+            var c: UInt32 = initial
             for b in buffer { c = (c >> 8) ^ crc32Table[Int((c ^ UInt32(b)) & 0xFF)] }
             return c
         }) { return fast }
-        var crc: UInt32 = 0
+        var crc: UInt32 = initial
         for b in bytes { crc = (crc >> 8) ^ crc32Table[Int((crc ^ UInt32(b)) & 0xFF)] }
         return crc
     }
@@ -47,4 +48,8 @@ public enum Checksum {
 
 public extension Array where Element == UInt8 {
     var hex: String { map { String(format: "%02x", $0) }.joined(separator: " ") }
+}
+
+public extension ArraySlice where Element == UInt8 {
+    var hex: String { Array(self).hex }
 }

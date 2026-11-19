@@ -16,8 +16,11 @@ let package = Package(
         // Always optimised: dithering and palette building over a whole animation are
         // ~60× slower at -Onone, which would make the app's Debug build unusable.
         .target(name: "L99Core", swiftSettings: [.unsafeFlags(["-O"])]),
+        // Direct USB bulk access to the screen in bootloader mode, bypassing macOS's CDC
+        // serial driver (research/ISP_PROTOCOL.md). C, because IOUSBLib is COM-style.
+        .target(name: "L99USB", linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("CoreFoundation")]),
         // Device access: the screen's serial port, the wired keyboard and the dongle (IOKit).
-        .target(name: "L99Link", dependencies: ["L99Core"]),
+        .target(name: "L99Link", dependencies: ["L99Core", "L99USB"]),
         // Command-line tool for hardware tests, on top of L99Link.
         .executableTarget(name: "l99probe", dependencies: ["L99Core", "L99Link"]),
         .testTarget(name: "L99CoreTests", dependencies: ["L99Core"]),

@@ -305,6 +305,140 @@ Other facts:
 - The active art for the user-visible areas sits between `0x625000` and `0x940000`. The page and touch records sit in `0x21DD0`–`0x251A5`.
 - **The upload command's address is the file offset.** Photo uploads write at `0x041E0000`, the same offset as the photo in the file. So the Mac upload command `0x64` might be able to rewrite single 128 KiB blocks of the interface art directly, which would install a skin without Windows. **Untested.** Open questions: does the screen accept `0x64` below `0x04000000`; does it erase and rewrite partial blocks correctly; does it cache art until a power cycle. Recovery from a bad write needs the Windows ISP tool, so this waits until the Windows restore test has passed.
 
+## Mac-install test (Nov 18): screen ignores writes to the interface area [HW]
+
+The upload command `0x64` at `0x00760000` (block `0x3B`, Numpad art) gets no reply at all, on two tries. The photo slot right afterwards takes 151/151 writes with matching CRCs. **Interface-file changes (skins, layouts) install only through AULA's Windows tool.** Details are in MAC_INSTALL_TEST.md. This answers the "upload address = file offset" hypothesis in the screen catalog section: the addresses match, but the firmware only accepts writes into its slots.
+
+## Windows restore on a real PC (Nov 18): PASSED [HW]
+
+- **Tool:** AULA's "L99 keyboard Screen reset firmware" EXE, run on a real Windows PC with the cable plugged in. The screen was in upgrade mode (Fn, X, 0, 6).
+- **Start button:** it stayed disabled for a long time, then "randomly" turned active. Before that, Alison had checked the hardware ID (`USB\VID_EEEF&PID_268A`) and power-cycled several times. The cause is unknown. **Next time, expect to wait or retry, and end any AULA driver process first.**
+- **Progress:** two progress bars ran. The first was fast (the screen's control program). The second took about 2–3 minutes (the 127 MB interface file). The final message was "OK".
+- **Result:** the screen works fully, back to factory content. The language reset to Chinese; it's set on the screen's Settings page. All keyboard settings are gone, because the keyboard reset tool was also run.
+- **So the Windows restore is a proven recovery route.** The screen now holds the stock interface file, which is the baseline the Mac-install test expects.
+
+## Windows restore attempt in Parallels (Nov 18): does not work
+
+- **Setup:** Parallels 26.5 with Windows 11 on ARM, on an M1 Max. The cable was plugged straight in.
+- **What worked:**
+  - The screen entered upgrade mode with Fn, X, 0, 6. It showed "Bootloader V2.30.156, Flash ID GD5F1GQ4".
+  - Parallels passed it to Windows as "Vendor EEEF – Communication". It appeared as COM4 (`\Device\USBSER000`).
+- **What failed:** the screen reset tool's Start button stayed disabled.
+- **Why, from AULA's ISP tool code** (Revisory676's unpacked `.text`; disassembled offline, nothing run):
+  - A timer slot (`getDevice`) scans `QSerialPortInfo::availablePorts()` for VID `0xEEEF` / PID `0x268A`.
+  - It opens the port, 8N1 with no flow control, and sends a `0x30` connect command (routine `0x402c60` → `0x402880`).
+  - It enables the button (`setDisabled(false)`) only when the screen answers.
+  - A separate routine reads `HKLM\HARDWARE\DEVICEMAP\SERIALCOMM` for the value `\Device\USBSER000`.
+  - So the screen's reply never reached the tool. The cause is either Parallels' USB passthrough or the x86 tool running under Windows-on-ARM emulation.
+- **No workaround:** Apple Silicon Parallels VMs are fixed at USB 3.0 (`prlctl list -i`: "Support USB 3.0: on", with no UI toggle).
+- **Decision (Alison):** use a real Windows PC for the restore.
+- **Nothing was written.** Switching the keyboard off and on leaves upgrade mode.
+- **Flash chip:** this unit has **GD5F1GQ4** (GigaDevice SPI NAND), not the W25N01GV that softce saw. The reset tool chooses the control-program version by flash ID.
+
+## Mac-driven screen research (Phase 3, Nov 18)
+
+Question: can the Mac drive more of the screen live, instead of only swapping art in fixed positions? Sources: softce `docs/architecture.md` and `docs/protocol.md`, miniz's evidence inventory, and AxiraDev `reverse/PROTOCOL.md`. Also the sample UI_Editor-II project in gavindi's `LT168A_UIEditor-II_Function_NOR_320x240_V2.30.rar`. Only its text files (`DisplayWidget.csv`, `TouchWidget.csv`, `SerialPortCommands.csv`, `Plugin/*.cfg`) were extracted, to the scratchpad; nothing was run. Levetop's `LT_UartTFT_AP Note_V10_ENG.pdf` turned out to describe the first-generation system (`AA … E4 1B 11 EE` frames), so it is lineage only.
+
+**Correction:** on the cable, the Mac *does* talk to the screen directly. The screen is its own USB serial device (`EEEF:268A`), and the photo uploads already use it. Only taps go through the keyboard.
+
+**Runtime variables (RAM, no flash writes)** [softce HW on a modified UI; sample-project CRCs match our CRC16]:
+- Short frame: `5A A5 | len u8 | body | CRC16/MODBUS LE`, where `len = len(body) + 2`.
+  - Read body: `03 | word_addr BE16 | count BE16`.
+  - Write body: `10 | word_addr BE16 | words BE16…`.
+- softce wrote ASCII strings (8 words each) into text widgets. The values updated live on the screen without reopening the page, and the readback was verified.
+- **System variables** (from the UI_Editor-II sample's `SerialPortCommands.csv`; not yet tried on the L99):
+
+  | Address | Function |
+  |---|---|
+  | `0x7000` | Switch page |
+  | `0x7001` | Brightness |
+  | `0x7002`–`0x7008` | RTC year…second, refresh |
+  | `0x700A` / `0x700B` | Play music / volume |
+  | `0x700D` | Open popup window |
+  | `0x700E` / `0x700F` | Auto-dimming / dimming level |
+  | `0x7010` | Time to sleep |
+  | `0x703F` | Language |
+
+- UI_Editor-II widget kinds seen in the sample: icon (a variable picks the image), GIF, scrolling text, label (text from a variable), progress bar, and autoVar (a timer-driven variable that counts). Each is bound to a variable address. Touch widgets have a `WriteAddr` column, so buttons may be able to write variables. That's unverified.
+- **No live pixel or framebuffer command is known** in either generation. Arbitrary live drawing isn't possible; live content means variables feeding widgets placed in the interface file.
+
+**Taps** [softce: static analysis of HFD V2.3 and keyboard resource 4000, plus HW]:
+- The screen sends `41 FF FF code_hi code_lo` over its internal UART to the keyboard.
+- The keyboard's table (resource 4000 at `0x19D7C`) turns known codes into HID keys. Codes `0x30`–`0x40` become numpad keys (`0x3B` → usage `0x59`, NumPad 1, and so on). Media codes (`0x22`–`0x24`, play/pause, next/previous) become consumer keys (AxiraDev HW).
+- Codes not in the table produce nothing. Getting F13-style keys would need a keyboard firmware change, which is ruled out.
+- softce's working pattern keeps the numpad codes, draws new button art, and has a PC app catch those keys and run actions. That gives up the numpad keys on other keyboards while the app is active.
+- If touch widgets can write variables, the Mac could instead poll them over serial (`03` reads) with no keystrokes at all. This is untested.
+
+**What this means for Phase 3:**
+- A custom interface file can use any layout and any tap areas.
+- On the cable, the Mac can feed live values to it: text, numbers, image choice, bars, page switching and brightness.
+- Taps reach the Mac as numpad or media keys, or possibly through variables.
+- Everything still works without the Mac, minus the live values.
+- Over the dongle there is no screen serial port, so only the stock relays (clock and stats) work.
+
+**Revised for wireless daily use (Alison, Nov 18: the dongle day to day; the cable only for occasional installs; Bluetooth not supported).** The direct serial link exists only on the cable, so live RAM writes from the Mac can't be the everyday path. What still works wirelessly:
+- **Mac → screen over the dongle:** only what the keyboard relays.
+  - The clock and stats packet: CPU %, CPU °C, GPU %, GPU °C, three weather temperatures, weather code, humidity.
+  - Music levels: 21 bands at about 75 frames/s.
+  - The stock UI shows only some of these. A custom interface file could show all of them anywhere, in any style, if we know where the screen stores them in memory.
+  - A spare field (for example the weather code, if it drives an image set) could carry our own states, such as focus or meeting, as long as both ends agree.
+- **Screen → Mac:** taps turn into numpad and media key presses inside the keyboard, so they should travel over the dongle. That is unverified wirelessly.
+- **Unchanged:** a custom interface file (layout, tap areas, pages) installs occasionally over the cable, or through Windows.
+
+**Next tests (need approval):**
+1. **Tap test, no writes at all.** On the dongle: open the Numpad page and tap keys into a text editor. Note which keys arrive, and whether the media buttons work.
+2. **Memory map, one-time on the cable, read-only on the screen.** Send one stats packet with distinctive values for every field, including the ones the stock UI hides. Then read the screen's runtime memory (`03` reads) to find where each field lands. This tells a custom interface file which addresses it can bind to, for use wirelessly.
+- **Both tests approved by Alison, Nov 18.**
+  - Test 2's tool is built: `swift run l99probe memory-map` (with `--dry-run` to build frames only).
+    - It sends only `03` reads, of words `0x0000`–`0x0FFF` and `0x7000`–`0x703F`, 16 words at a time. `L99Core/RuntimeMemory` has no write builder.
+    - It takes snapshots before, after marker set A, and after marker set B, then sets the clock back.
+    - It saves `l99probe-memory-map.json`.
+    - Covered by `RuntimeMemoryTests`; all 49 tests pass.
+  - **Run Nov 18 on the cable, stock UI, Real-time page open.**
+    - Every read was answered; there were no errors and no freeze.
+    - Raw snapshots are in `research/memory-map-2026-11-18.json`.
+
+**Tap test results (Nov 18, 2.4 GHz dongle, stock UI)** [HW]:
+- **Every Numpad key tapped arrived on the Mac over the dongle as a real numpad key**, logged in a browser key viewer: `Numpad0`–`Numpad9`, `NumpadDecimal`, `NumpadDivide`, `NumpadMultiply`, `NumpadSubtract`, `NumpadAdd`, `NumpadEnter`. That's 16 keys, all with location NUMPAD, so the Mac can tell them from the number row. A tap is about 80–100 ms from key-down to key-up.
+- The page's 17th key (probably Num Lock or Clear, which browsers don't report) wasn't tested.
+- Volume down, mute, volume up, play/pause, previous and next all worked on the Mac over the dongle (Alison). Those are consumer keys, so the browser viewer didn't log them, as expected.
+- **So screen buttons can trigger Mac actions wirelessly.** A custom layout can reuse the 17 numpad codes and the media codes as its buttons. The Mac app catches the numpad keys and maps them to actions; the media codes keep their normal meaning.
+
+**Memory map results (Nov 18)** [HW]:
+- **A widget's variable number is its RAM word address.** The stats land at exactly the variables the catalog found on page 19. So any variable in the interface file can be read, and a custom layout can bind to any of them.
+- **Stats from the clock/stats packet:**
+
+  | Word | Field | Note |
+  |---|---|---|
+  | `0x0101` | Weather code | **Stored, but no stock widget shows it.** A custom layout can show a weather icon. |
+  | `0x0103` | Air temperature | |
+  | `0x0104` | Humidity % | |
+  | `0x0106` | CPU load % | |
+  | `0x0108` | GPU load % | |
+
+  - CPU °C, GPU °C, day high and night low **are not stored** in either range, so the keyboard doesn't pass them on.
+  - `0x0102` held `0x1B` (27) throughout and didn't follow the markers. That matches day high 27 from the earlier smoke test, but its meaning is unknown.
+- **System variables match the UI_Editor-II sample:**
+
+  | Word | Value read | Meaning |
+  |---|---|---|
+  | `0x7000` | 19 | Current page (Real-time Data) |
+  | `0x7001` | 63 | Brightness |
+  | `0x7002`–`0x7007` | 26-11-18 11:32:xx | Screen clock (year…second) |
+  | `0x7008` | 3 | Weekday, Wednesday (inference) |
+  | `0x700B` | 10 | Volume |
+  | `0x700F` | 10 | Dim level |
+  | `0x7010` | 60 | Sleep time |
+  | `0x703F` | 1 | Language |
+
+- **Top-bar status:** words `0x0001`–`0x0008` match the top-bar variables 1–8 (Win/Mac mode, connection, Caps, Num, battery level 0–6). Values read on the cable were: `0x0001` = 1, `0x0003` = 1, `0x0008` = 6.
+- **Strings:** `0x004A`–`0x004D` hold "AULA L99", and `0x008A`–`0x008C` hold "V1.31".
+- Other non-zero words are not yet understood (`0x0000`–`0x0029`, `0x00AB`–`0x00D0`, `0x0300`–`0x0310`).
+- **Wireless data budget for a custom layout:**
+  - from the Mac: the clock plus five values (weather code, air temperature, humidity, CPU %, GPU %), and the music spectrum;
+  - from the keyboard and screen themselves: battery, connection, Caps/Num, Win/Mac mode, brightness and page.
+- Dropped: the page-switch and brightness write tests. They only work on the cable, so they don't help daily use.
+
 ## Protocol reference (for the build)
 
 ### Devices

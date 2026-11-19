@@ -112,8 +112,16 @@ The app is personal, local and quiet. It is built for one Mac and one keyboard a
 - **Private.** Network calls are fine where a feature needs them, such as weather. No telemetry, accounts or auto-updates. Built from source on Alison's Mac, so no notarization is needed.
 - **Platform.** Brand-new M5 Mac on the latest macOS. Apple Silicon only, no Intel build.
 - **Native menu bar app.** Swift and SwiftUI, launching at login, with no Dock icon. One language, so it stays approachable for a non-full-time developer working in Claude Code.
-- **Connection reality.** The keyboard normally runs on the 2.4 GHz dongle. Plugging in the cable for occasional uploads is fine. Needing the cable all the time is not. *Now met: everything except uploads works over the dongle.*
+- **Connection reality (hard constraint, restated by Alison Nov 18).**
+  - Day to day, the keyboard runs wireless over the 2.4 GHz dongle. It is never on the cable all day.
+  - **Bluetooth is not supported** (Alison, Nov 18). No feature is designed or tested for it.
+  - Plugging into the Mac occasionally, to install or upload things, is fine. A Windows PC is for rarer jobs still.
+  - So **every everyday feature must work wirelessly**. Anything cable-only is limited to install or setup steps. This includes Phase 3's live screen ideas: the screen's direct serial link only exists on the cable, so it can't be the everyday path.
+  - *Phases 1–2 meet this: everything except uploads works over the dongle.*
 - **Windows is a fallback only.** A Windows machine is available for rare jobs such as a factory restore or a firmware update. It is never part of the normal workflow.
+  - It must be a **real PC**. Parallels on this Apple Silicon Mac can't run AULA's screen reset tool (tried Nov 18, see FINDINGS.md).
+  - **The screen restore was proven on a real PC on Nov 18:** about 2–3 minutes, with the final message "OK".
+  - **Skins and layouts install through that PC too.** The Mac-install test showed the screen ignores Mac writes outside the photo, background and GIF slots (Nov 18). Each interface-file change means one occasional trip to the PC with AULA's screen tool and our built `UartTFT-II_Flash.bin`. Everything day to day stays on the Mac over the dongle.
 - **Never touch the control programs.** No changes to the keyboard firmware or the screen's control program. Phase 3 changes only the interface file.
 - **Keyboard functions come first.** Lighting controls, Caps/Num Lock, connection and battery status, and the mini numpad must keep working after every change.
 - **Learn from the existing projects; don't depend on them.** Protocol knowledge comes from the open-source repos and AULA's own driver, reimplemented in Swift. `tools/l99probe/Sources/L99Core` is the start of that, with 18 tests checked against captures and the factory file.
@@ -237,7 +245,7 @@ Goal: make the screen look better and carry less, with every keyboard function i
 | 9 | GIF colour conversion | Arbitrary RGB565 palettes display, confirmed with our own GIFs. Exact colours when a frame has ≤256, otherwise a per-frame palette with damped serpentine dithering. Delay unit is milliseconds. | **Answered on hardware** |
 | 10 | CPU/GPU on M5 | CPU and GPU % via public/IORegistry APIs. Temperatures via private APIs. | **Open**: list M5 sensors on the machine |
 | 11 | *(new)* Music fore/back mode values | Same key-light visualiser in two directions: `fore` up from the bottom, `back` down from the top; the value picks one of 9 colour sets, 0 = off. Neither changes the screen's bars. | Answered on hardware (FINDINGS.md) |
-| 12 | *(new)* Bluetooth | No data channel is known. Not needed for the plan. | Deferred |
+| 12 | *(new)* Bluetooth | Not supported (Alison, Nov 18). | Out of scope |
 
 ## Process
 

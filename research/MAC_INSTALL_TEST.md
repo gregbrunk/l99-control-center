@@ -1,11 +1,20 @@
-# Mac skin-install test (plan, not yet run)
+# Mac skin-install test: RESULT, the screen does not accept it (Nov 18)
+
+**Answer: no.** The screen ignores upload writes to the interface area, so skins and layouts install through Windows only.
+- Step A was run twice on the cable, the second time with the Numpad page open. The screen **never replied** to the first `0x64` write at `0x00760000`; it timed out after 3 s. The tool stopped there, so B and C were not run.
+- **Control:** immediately afterwards, the normal photo upload (`photo --factory`, the same bytes already in the slot) got 151/151 "OK" replies and three matching CRCs in 0.7 s. The link and the screen were fine.
+- **So the firmware silently drops writes outside its picture slots** (at least below `0x04000000`). Nothing was changed: step A's data was the stock bytes anyway.
+
+---
+
 
 **Question:** can the Mac write skin artwork straight into the screen's interface area, using the same upload command it already uses for photos? If it can, skins install in seconds from the Mac, and Windows is needed only for emergencies.
 
 **Status:**
 - Plan approved by Alison on Nov 18. That approval covers exactly the writes below.
 - The tool is built and unit-tested, and dry runs pass. Nothing has been written yet.
-- **Still waiting on the Windows restore test.** Don't run any step until it has passed.
+- **The Windows restore test PASSED on Nov 18, on a real PC. Steps A–C are unblocked.**
+  - Parallels didn't work.
 
 ## Why it might work
 

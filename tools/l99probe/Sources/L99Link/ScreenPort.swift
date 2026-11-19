@@ -97,6 +97,19 @@ public final class ScreenPort {
         throw LinkError("Timed out after \(timeout)s waiting for the screen to reply")
     }
 
+    /// READ-ONLY: reads `count` runtime words at `address` (short `03` frame, bounds-checked in RuntimeMemory).
+    public func readWords(address: UInt16, count: Int) throws -> [UInt16] {
+        let frame = try RuntimeMemory.readFrame(address: address, count: count)
+        if verbose { print("  TX", frame.hex) }
+        try write(frame)
+        for _ in 0..<2 {
+            let body = try reply(timeout: 2)
+            if verbose { print("  RX", body.hex) }
+            if let words = try RuntimeMemory.words(fromReply: body, address: address, count: count) { return words }
+        }
+        throw LinkError("The screen only acknowledged the memory read and sent no data. Stopped.")
+    }
+
     /// Sends one request, then requires an ACK body `[cmd, FF]` and a result body
     /// `[cmd, addr(4), …]` with the same address. Any deviation throws (= stop).
     public func request(_ command: UInt8, address: UInt32, data: [UInt8]) throws -> [UInt8] {

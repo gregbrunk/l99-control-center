@@ -14,7 +14,24 @@ The screen stays a keyboard command center. The app never touches the keyboard's
 |---|---|---|
 | 1 | Uploads and recovery (cable) | ✅ Built and tested on hardware |
 | 2 | Live data and music over the dongle | ✅ Built and tested on hardware |
-| 3 | Skins | ✅ Skin maker and the app's Skins window, both proven on hardware |
+| 3 | Skins | ✅ Skin maker and the app's Skins tab, both proven on hardware |
+| 4 | One window | ✅ All five sections in a single window with a side rail |
+
+## The app
+
+The menu bar icon opens a small panel: connection, live data toggles, units, and links. Everything else is in **one window** with a rail down the left side. The menu bar's links open the window on the right tab.
+
+| Tab | What it does |
+|---|---|
+| **Upload** | Drop or choose a picture or GIF, frame it (Fill/Fit, zoom, drag) on a full-size preview of the screen, and send it to the background, photo frame or GIF slot over the cable. |
+| **Library** | Everything you've sent, filterable by slot and searchable. Shows what's on the screen now and resends with one click. Backgrounds show as off while a Home skin is installed. |
+| **Skins** | A style for each page, which apps show on Home, the top bar, live previews, and the guided install or **Back to stock**. Shows the skin that's on the keyboard. |
+| **Effects** | The music visualiser on the screen and the key lights: on/off, sensitivity, direction and colours. |
+| **Recovery** | Puts the factory photo, GIF or wallpaper back, retries an interrupted upload, and explains the Windows reset if the screen won't start. |
+
+In wide windows, Library, Effects and Recovery also show a keyboard panel: connection, what's on the screen, the installed skin, live readings and shortcuts. The rail's bottom tile shows whether the USB cable is in (uploads and skins need it; everyday live data goes over the dongle).
+
+The app's logo and icon are the screen with four equaliser bars. In the rail, the bars move with the music while it plays.
 
 ### Skins
 
@@ -25,14 +42,15 @@ Each part of the screen takes its own style:
 - **Styles:** Liquid Glass Night, Liquid Glass Day, Cyberpunk, Ceramic, Ember, Midnight LED.
 - **Hiding apps:** Home apps you don't use can be hidden; the remaining tiles re-flow to fill the grid.
 
-In the app, **Skins…** in the menu bar opens the picker: a style for each page, live previews, a warning when the top bar would be hard to read, and a guided install (cable, Fn+X, 0, 6, then the Mac's admin password). **Back to stock…** restores the factory interface the same way. The first time, the app asks for `UartTFT-II_Flash.bin` from AULA's reset package and checks it.
+In the app, the **Skins** tab is the picker: a style for each page, a tappable miniature of the Home grid for hiding apps, live previews, a warning when the top bar would be hard to read, and a guided install (cable, Fn+X, 0, 6, then the Mac's admin password). **Back to stock…** restores the factory interface the same way. Installs keep the photo and GIF on the screen. The first time, the app asks for `UartTFT-II_Flash.bin` from AULA's reset package and checks it.
 
 The skin maker renders the art and lays it out. It builds one interface file from the stock file, which the Mac installs through the screen's bootloader over the cable (about 4½ minutes). Every read-back is checked against the file.
 
 ## Repository layout
 
 ```
-L99 Control Center/        The menu bar app (Xcode project, SwiftUI, macOS 26)
+L99 Control Center/        The menu bar app (Xcode project, SwiftUI, macOS 26): menu panel plus one
+                           main window (MainWindow.swift: rail, theme and shared controls)
 tools/l99probe/            Swift package shared by the app and the command-line tool
   Sources/L99Core/         Protocols and file formats: HID packets, screen uploads, ISP,
                            LT images, GIF container, interface-file editor
@@ -50,6 +68,7 @@ PRD.md                     Product requirements and process
 ## Building
 
 - **App:** open `L99 Control Center/L99 Control Center.xcodeproj` in Xcode and run. It uses the `tools/l99probe` package as a local dependency.
+- **Checking the layout without the menu bar (Debug builds):** `--render-skins <file.png> --tab <upload|library|skins|music|recovery> [--size 1000x680]` draws the window into a PNG and quits. `--render-icon <folder>` redraws the app icon PNGs (they live in `Assets.xcassets/AppIcon.appiconset`).
 - **Command-line tool:**
 
   ```bash

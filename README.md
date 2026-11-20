@@ -1,12 +1,46 @@
+<div align="center">
+
+<img src="L99%20Control%20Center/L99%20Control%20Center/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png" width="128" alt="L99 Control Center icon">
+
 # L99 Control Center
 
-A private macOS menu bar app for the **AULA L99** keyboard's 320×480 touchscreen. It does on a Mac what AULA's Windows-only software does, and then some:
+**A macOS menu bar app for the AULA L99 keyboard's touchscreen.**
+
+[![macOS 26+](https://img.shields.io/badge/macOS-26%2B-000000?logo=apple&logoColor=white)](#install)
+[![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)](https://swift.org)
+[![SwiftUI](https://img.shields.io/badge/UI-SwiftUI-0A84FF)](#the-app)
+[![Apple silicon](https://img.shields.io/badge/Apple%20silicon-arm64-555555)](#install)
+[![License: MIT](https://img.shields.io/badge/License-MIT-E8692A.svg)](LICENSE)
+<br>
+[![Last commit](https://img.shields.io/github/last-commit/gregbrunk/l99-control-center)](https://github.com/gregbrunk/l99-control-center/commits/main)
+[![Code size](https://img.shields.io/github/languages/code-size/gregbrunk/l99-control-center)](https://github.com/gregbrunk/l99-control-center)
+[![Issues](https://img.shields.io/github/issues/gregbrunk/l99-control-center)](https://github.com/gregbrunk/l99-control-center/issues)
+[![Stars](https://img.shields.io/github/stars/gregbrunk/l99-control-center?style=flat)](https://github.com/gregbrunk/l99-control-center/stargazers)
+
+<img src="docs/screenshot.png" width="760" alt="The Skins tab: a style for each page of the keyboard's screen, with live previews of every page">
+
+</div>
+
+The L99's 3.98″ 320×480 screen can only be set up from AULA's Windows driver. This app does the same on a Mac, and then some:
 
 - **Uploads:** photos, backgrounds and GIFs, with recovery to the factory content. No Windows needed.
 - **Live data over the 2.4 GHz dongle:** clock, weather, CPU/GPU load, battery, and the music visualiser. US (12-hour, °F) or metric units.
 - **Skins:** six styles for the screen's own pages, picked per page, built and installed from the Mac.
 
 The screen stays a keyboard command center. The app never touches the keyboard's firmware or the screen's control program.
+
+## Install
+
+There's no published download yet, so build it yourself (see [Building](#building)). You need a Mac with Apple silicon on macOS 26 or later, and an AULA L99 with its 2.4 GHz dongle and USB cable.
+
+On first launch, allow:
+
+- **Location**, for the weather on the screen.
+- **Screen & System Audio Recording**, for the music bars. The sound is measured in memory and never saved or sent.
+
+Uploads and skin installs need the USB cable; everyday live data goes over the dongle. Skin installs ask for your Mac's admin password.
+
+**Moving to another Mac:** Recovery → **Export…** saves your Library, the checked stock interface file and your settings in one .zip. On the new Mac, choose **Import…** in the same place.
 
 ## Status
 
@@ -102,7 +136,15 @@ Installing the stock file the same way restores the factory interface.
 - A skin only edits the screen's interface file, inside planned byte ranges; each build checks this before saving.
 - No telemetry, accounts or auto-updates.
 
-## Credits and licences
+## Contributing
+
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: this app talks to real hardware, and the safety rules above are not negotiable.
+
+## Licence
+
+L99 Control Center is released under the [MIT License](LICENSE).
+
+## Credits
 
 - **Fonts:** Inter and JetBrains Mono, under the SIL Open Font License 1.1 (texts in `tools/l99probe/Sources/L99Skins/Fonts/`).
 - **Prior work:** the research builds on community projects studied read-only. They're credited in `research/FINDINGS.md` and `research/notes/`. No code from them is included or run.

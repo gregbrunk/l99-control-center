@@ -22,7 +22,7 @@
 
 To build it once, open Terminal:
 ```bash
-cd "/Users/greg/Documents/L99 Control Center/tools/l99probe" && swift build -c release
+cd tools/l99probe && swift build -c release
 ```
 Then run commands from that folder as `.build/release/l99probe <command>`. Add `--verbose` to see every byte. Add `--dry-run` to see what would be sent without touching the keyboard.
 

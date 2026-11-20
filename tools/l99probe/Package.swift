@@ -1,6 +1,6 @@
 // swift-tools-version:5.10
 // l99probe — hardware smoke-test tool for the AULA L99 (PRD step 3).
-// Private, local-only. No network access.
+// Local-only. No network access.
 import PackageDescription
 
 let package = Package(

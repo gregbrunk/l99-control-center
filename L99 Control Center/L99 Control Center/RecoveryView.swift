@@ -1,6 +1,7 @@
 import AppKit
 import L99Core
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct RecoveryView: View {
     let model: AppModel
@@ -9,6 +10,11 @@ struct RecoveryView: View {
     @State private var restoreBackground = false
     @State private var importing = false
     @State private var importError: String?
+    @State private var moving: String?          // "Exporting…" / "Importing…" while working
+    @State private var moveResult: String?
+    @State private var moveError: String?
+    @State private var imported = false
+    @State private var pendingImport: URL?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -16,6 +22,7 @@ struct RecoveryView: View {
                 interruptedCard(interrupted)
             }
             factoryCard
+            moveCard
             windowsCard
             TransferStatus(transfer: model.transfer)
         }
@@ -157,6 +164,94 @@ struct RecoveryView: View {
                 }
             case .failure(let error):
                 importError = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: Moving to another Mac
+
+    private var moveCard: some View {
+        Card(systemImage: "macbook.and.iphone", tint: Studio.accent, title: "Move to another Mac",
+             subtitle: "Export your Library, the stock screen file and your settings, including which skin is on the keyboard, into one file. Import it on the other Mac.") {
+            HStack(spacing: 10) {
+                Button { export() } label: { Label("Export…", systemImage: "square.and.arrow.up") }
+                    .buttonStyle(.studioPrimary)
+                Button { chooseImport() } label: { Label("Import…", systemImage: "square.and.arrow.down") }
+                if let moving {
+                    ProgressView().controlSize(.small)
+                    Text(moving).font(.l99Note).foregroundStyle(.secondary)
+                }
+            }
+            .disabled(moving != nil || model.transfer.isBusy || model.skins.isInstalling)
+            if let moveResult {
+                Label(moveResult, systemImage: "checkmark.circle.fill").font(.l99Note).foregroundStyle(.green)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if imported {
+                Button { Migration.relaunch() } label: { Label("Restart the app now", systemImage: "arrow.clockwise") }
+                    .buttonStyle(.studioPrimary)
+            }
+            if let moveError {
+                Label(moveError, systemImage: "exclamationmark.triangle.fill").font(.l99Note).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("Window sizes, launch at login, the weather location and macOS permissions belong to each Mac, so they don't move.")
+                .font(.l99Note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .confirmationDialog("Replace this Mac's Library and settings?", isPresented: Binding(
+            get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } }
+        ), titleVisibility: .visible) {
+            Button("Import") { if let url = pendingImport { runImport(url) }; pendingImport = nil }
+        } message: {
+            Text("The Library already on this Mac goes to the Trash, so you can get it back. The app restarts afterwards.")
+        }
+    }
+
+    private func export() {
+        let panel = NSSavePanel()
+        panel.title = "Export for another Mac"
+        panel.nameFieldStringValue = "L99 Control Center Transfer.zip"
+        panel.allowedContentTypes = [.zip]
+        panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        moving = "Exporting…"; moveResult = nil; moveError = nil; imported = false
+        Task {
+            let result = await Task.detached(priority: .userInitiated) { Result { try Migration.export(to: url) } }.value
+            moving = nil
+            switch result {
+            case .success(let m):
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } ?? ""
+                moveResult = "Saved “\(url.lastPathComponent)” (\(size)): \(m.libraryItems) pictures" + (m.hasStockFile ? ", the stock file" : "") + " and your settings. AirDrop it to the other Mac."
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            case .failure(let e):
+                moveError = e.localizedDescription
+            }
+        }
+    }
+
+    private func chooseImport() {
+        let panel = NSOpenPanel()
+        panel.title = "Import from another Mac"
+        panel.allowedContentTypes = [.zip]
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        pendingImport = url
+    }
+
+    private func runImport(_ url: URL) {
+        moving = "Importing…"; moveResult = nil; moveError = nil; imported = false
+        Task {
+            let result = await Task.detached(priority: .userInitiated) { Result { try Migration.importArchive(url) } }.value
+            moving = nil
+            switch result {
+            case .success(let m):
+                moveResult = "Imported \(m.libraryItems) pictures" + (m.hasStockFile ? ", the stock file" : "") + " and your settings. Restart the app to finish."
+                imported = true
+            case .failure(let e):
+                moveError = e.localizedDescription
             }
         }
     }

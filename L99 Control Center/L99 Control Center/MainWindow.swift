@@ -36,7 +36,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .library: "Everything you've sent, ready to send again."
         case .skins: "A style for each page of the screen, built and installed from your Mac."
         case .music: "Music bars on the screen and lights on the keys, following your Mac's sound."
-        case .recovery: "Put the factory pictures back, or get help if the screen won't start."
+        case .recovery: "Factory pictures, moving to another Mac, and help if the screen won't start."
         }
     }
     var icon: String {

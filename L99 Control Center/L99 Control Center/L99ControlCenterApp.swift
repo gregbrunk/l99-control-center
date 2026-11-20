@@ -8,6 +8,7 @@ enum Entry {
     static func main() {
         if let code = InterfaceInstaller.runIfRequested(CommandLine.arguments) { exit(code) }
         #if DEBUG
+        MigrationCommand.runIfRequested()
         IconRenderer.renderIfRequested()
         DebugSnapshot.renderIfRequested()
         #endif

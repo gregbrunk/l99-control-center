@@ -15,3 +15,6 @@ research/*
 
 # Built interface files (127 MB each)
 build/
+
+# Notarized builds kept locally (one folder per date)
+Compiled Versions/

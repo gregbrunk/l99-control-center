@@ -8,13 +8,14 @@ enum Entry {
     static func main() {
         if let code = InterfaceInstaller.runIfRequested(CommandLine.arguments) { exit(code) }
         #if DEBUG
+        IconRenderer.renderIfRequested()
         DebugSnapshot.renderIfRequested()
         #endif
         L99ControlCenterApp.main()
     }
 }
 
-/// Menu bar only (LSUIElement = YES): no Dock icon. Windows open from the dropdown.
+/// Menu bar only (LSUIElement = YES): no Dock icon. One window, with a tab per section, opens from the dropdown.
 struct L99ControlCenterApp: App {
     @State private var model = AppModel()
 
@@ -27,48 +28,26 @@ struct L99ControlCenterApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("Upload to Screen", id: WindowID.upload) {
-            UploadView(model: model)
+        Window("L99 Control Center", id: WindowID.main) {
+            MainWindow(model: model)
         }
-        .windowResizability(.contentSize)
-
-        Window("Library", id: WindowID.library) {
-            LibraryView(model: model)
-        }
-        .defaultSize(width: 900, height: 640)
-
-        Window("Recovery", id: WindowID.recovery) {
-            RecoveryView(model: model)
-        }
-        .windowResizability(.contentSize)
-
-        Window("Skins", id: WindowID.skins) {
-            SkinsView(model: model)
-        }
-        .defaultSize(width: 980, height: 700)
-
-
-        Window("Music and Key Lighting", id: WindowID.music) {
-            MusicView(model: model)
-        }
-        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1260, height: 830)
     }
 }
 
 enum WindowID {
-    static let upload = "upload"
-    static let library = "library"
-    static let recovery = "recovery"
-    static let music = "music"
-    static let skins = "skins"
+    static let main = "main"
 }
 
-/// Opens one of the app's windows and brings it to the front (the app has no Dock icon).
+/// Opens the app's window on a tab and brings it to the front (the app has no Dock icon).
 struct WindowOpener {
     let openWindow: OpenWindowAction
+    let model: AppModel
 
-    func callAsFunction(_ id: String) {
-        openWindow(id: id)
+    func callAsFunction(_ tab: AppTab) {
+        model.tab = tab
+        openWindow(id: WindowID.main)
         NSApp.activate(ignoringOtherApps: true)
     }
 }

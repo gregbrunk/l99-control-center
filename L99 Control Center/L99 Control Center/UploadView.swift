@@ -105,42 +105,29 @@ final class UploadModel {
 
 struct UploadView: View {
     let model: AppModel
-    @State private var upload = UploadModel()
+    @Bindable private var upload: UploadModel
     @State private var dropTargeted = false
     @State private var dragStart: CGSize?
     @State private var showingImporter = false
 
+    init(model: AppModel) {
+        self.model = model
+        _upload = Bindable(model.upload)
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            sourcePane
-                .frame(width: 250)
-            Divider()
-            previewPane
-                .frame(minWidth: 420)
-            Divider()
-            settingsPane
-                .frame(width: 280)
-        }
-        .frame(height: 660)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("Destination", selection: $upload.slot) {
-                    ForEach(ScreenProtocol.Slot.allCases, id: \.self) { slot in
-                        Text(slot.displayName).tag(slot)
-                            .selectionDisabled(slot == .background && model.skins.homeSkinInstalled)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 300)
-                .onChange(of: upload.slot) {
-                    if upload.slot == .background && model.skins.homeSkinInstalled { upload.slot = .photo }
-                    upload.slotChanged()
-                }
-            }
-            ToolbarItem(placement: .automatic) {
-                CableStatus(connected: model.devices.screen)
+        GeometryReader { geo in
+            // Side columns grow with the window; the preview takes the rest.
+            let side = min(360, max(270, geo.size.width * 0.27))
+            HStack(spacing: 0) {
+                sourcePane.frame(width: side)
+                Divider()
+                previewPane.frame(maxWidth: .infinity)
+                Divider()
+                settingsPane.frame(width: side)
             }
         }
+        .frame(maxHeight: .infinity)
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: SourceImage.supportedTypes) { result in
             if case .success(let url) = result {
                 let access = url.startAccessingSecurityScopedResource()
@@ -153,180 +140,252 @@ struct UploadView: View {
     // MARK: Left
 
     private var sourcePane: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("SOURCE").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            VStack(spacing: 8) {
-                Image(systemName: "photo.badge.plus").font(.largeTitle).foregroundStyle(.secondary)
-                Text("Drop an image or GIF").font(.callout)
-                Text("PNG, JPEG, HEIC or GIF").font(.caption).foregroundStyle(.secondary)
-                Button("Choose file…") { showingImporter = true }
-            }
-            .frame(maxWidth: .infinity, minHeight: 160)
-            .background(dropTargeted ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor),
-                        in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                .foregroundStyle(dropTargeted ? Color.accentColor : Color.secondary))
-            .dropDestination(for: URL.self) { urls, _ in
-                guard let url = urls.first else { return false }
-                upload.load(url)
-                return true
-            } isTargeted: { dropTargeted = $0 }
-
+        VStack(alignment: .leading, spacing: 16) {
+            SectionLabel("Source")
+            dropZone
             if let error = upload.loadError {
-                Text(error).font(.callout).foregroundStyle(.red)
+                Label(error, systemImage: "exclamationmark.triangle.fill").font(.l99Note).foregroundStyle(.red)
             }
             if let source = upload.source {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(source.url.lastPathComponent).font(.callout.weight(.semibold)).lineLimit(2)
-                    Text("\(source.pixelWidth) × \(source.pixelHeight)" + (source.isAnimated ? " · \(source.frames.count) frames" : ""))
-                        .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    Image(systemName: source.isAnimated ? "play.rectangle.fill" : "photo.fill")
+                        .font(.system(size: 16)).foregroundStyle(Studio.accent)
+                        .frame(width: 40, height: 40)
+                        .background(Studio.accentSoft, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(source.url.lastPathComponent).font(.system(size: 14, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+                        Text("\(source.pixelWidth) × \(source.pixelHeight)" + (source.isAnimated ? " · \(source.frames.count) frames" : ""))
+                            .font(.l99Note).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .studioCard(padding: 12)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Replaces what's in the \(upload.slot.displayName.lowercased()) slot. Everything you send stays in your Library.",
+                      systemImage: "arrow.triangle.2.circlepath")
+                if model.skins.homeSkinInstalled {
+                    Label("Background is off: the Home skin on the keyboard draws Home itself.", systemImage: "paintpalette")
+                        .foregroundStyle(Color(light: 0xB4521B, dark: 0xF5B48A))
                 }
             }
-            Text("Replaces what's in the \(upload.slot.displayName.lowercased()) slot. Everything you send stays in your Library.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if model.skins.homeSkinInstalled {
-                Text("Background is off: the Home skin on the keyboard draws Home itself.")
-                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            .font(.l99Note)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(24)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var dropZone: some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        return VStack(spacing: 14) {
+            ZStack {
+                Circle().fill(Studio.accent.opacity(dropTargeted ? 0.25 : 0.12)).frame(width: 84, height: 84)
+                Image(systemName: dropTargeted ? "arrow.down.circle.fill" : "photo.badge.plus")
+                    .font(.system(size: 32, weight: .medium))
+                    .foregroundStyle(Studio.accent)
+                    .contentTransition(.symbolEffect(.replace))
             }
-            Spacer()
+            .scaleEffect(dropTargeted ? 1.08 : 1)
+            VStack(spacing: 4) {
+                Text(dropTargeted ? "Drop to load" : "Drop an image or GIF").font(.system(size: 17, weight: .semibold))
+                Text("PNG, JPEG, HEIC or GIF").font(.l99Note).foregroundStyle(.secondary)
+            }
+            Button("Choose file…") { showingImporter = true }
+                .buttonStyle(.studioPrimary)
         }
         .padding(20)
+        .frame(maxWidth: .infinity, minHeight: 240, maxHeight: 420)
+        .background(dropTargeted ? Studio.accentSoft : Studio.card.opacity(0.7), in: shape)
+        .overlay(shape.strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
+            .foregroundStyle(dropTargeted ? Studio.accent : Color.secondary.opacity(0.45)))
+        .animation(Studio.snap, value: dropTargeted)
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first else { return false }
+            upload.load(url)
+            return true
+        } isTargeted: { dropTargeted = $0 }
     }
 
     // MARK: Middle
 
     private var previewPane: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                Rectangle().fill(.black)
-                if let preview = upload.preview {
-                    Image(decorative: preview, scale: 1)
-                        .interpolation(.none)
-                } else {
-                    Text(upload.source == nil ? "Your picture appears here at its real size." : "Preparing preview…")
-                        .font(.callout).foregroundStyle(.white.opacity(0.8))
-                        .multilineTextAlignment(.center)
+        GeometryReader { geo in
+            // As big as the space allows (whole steps when that's possible, so pixels stay crisp).
+            let fit = min((geo.size.width - 96) / 320, (geo.size.height - 110) / 480)
+            let scale = max(0.6, fit >= 2 ? floor(fit * 2) / 2 : fit)
+            VStack(spacing: 16) {
+                ZStack {
+                    Rectangle().fill(.black)
+                    if let preview = upload.preview {
+                        Image(decorative: preview, scale: 1)
+                            .resizable()
+                            .interpolation(.none)
+                    } else {
+                        VStack(spacing: 10) {
+                            Image(systemName: upload.source == nil ? "sparkles.rectangle.stack" : "hourglass")
+                                .font(.system(size: 30, weight: .light))
+                            Text(upload.source == nil ? "Your picture appears here,\nexactly as the screen will show it." : "Preparing preview…")
+                                .font(.system(size: 15))
+                                .multilineTextAlignment(.center)
+                        }
+                        .foregroundStyle(.white.opacity(0.75))
                         .padding()
+                    }
                 }
+                .frame(width: 320 * scale, height: 480 * scale)
+                .clipShape(RoundedRectangle(cornerRadius: 6 * scale, style: .continuous))
+                .padding(12 * scale)
+                .background(LinearGradient(colors: [Color(white: 0.17), Color(white: 0.07)], startPoint: .top, endPoint: .bottom),
+                            in: RoundedRectangle(cornerRadius: 26 * scale, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 26 * scale, style: .continuous).strokeBorder(.white.opacity(0.10)))
+                .shadow(color: .black.opacity(0.30), radius: 30, y: 16)
+                .gesture(DragGesture()
+                    .onChanged { value in
+                        let start = dragStart ?? upload.framing.offset
+                        dragStart = start
+                        // The preview is scaled up; the offset is in screen pixels.
+                        upload.framing.offset = CGSize(width: start.width + value.translation.width / scale,
+                                                       height: start.height + value.translation.height / scale)
+                    }
+                    .onEnded { _ in dragStart = nil })
+                .accessibilityLabel("Preview of the 320 by 480 screen. Drag to move the picture.")
+                HStack(spacing: 8) {
+                    StatusPill(text: String(format: "%g×", (scale * 10).rounded() / 10), tint: .secondary, dot: false)
+                    Text("320 × 480 · colours as the screen shows them · drag to move")
+                }
+                .font(.l99Note)
+                .foregroundStyle(.secondary)
             }
-            .frame(width: 320, height: 480)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-            .padding(14)
-            .background(Color(white: 0.11), in: RoundedRectangle(cornerRadius: 22))
-            .gesture(DragGesture()
-                .onChanged { value in
-                    let start = dragStart ?? upload.framing.offset
-                    dragStart = start
-                    upload.framing.offset = CGSize(width: start.width + value.translation.width,
-                                                   height: start.height + value.translation.height)
-                }
-                .onEnded { _ in dragStart = nil })
-            .accessibilityLabel("Preview at actual size, 320 by 480. Drag to move the picture.")
-            Text("Actual size · 320 × 480 · colours as the screen shows them. Drag to move.")
-                .font(.caption).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background(Studio.canvas.opacity(0.55))
     }
 
     // MARK: Right
 
     private var settingsPane: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("FRAMING").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Picker("Framing", selection: $upload.framing.mode) {
-                    ForEach(Framing.Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                LabeledContent("Zoom") {
+        VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionLabel("Framing")
+                PillPicker(selection: $upload.framing.mode,
+                           options: Framing.Mode.allCases.map { PillOption(value: $0, label: $0.rawValue, icon: $0.rawValue == "Fill" ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left") },
+                           large: true, fill: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Zoom").font(.system(size: 14, weight: .medium))
+                        Spacer()
+                        Text(String(format: "%.0f%%", upload.framing.zoom * 100)).font(.system(size: 13).monospacedDigit()).foregroundStyle(.secondary)
+                    }
                     Slider(value: $upload.framing.zoom, in: 0.5...3)
                 }
-                Button("Reset") { upload.framing = Framing(mode: upload.framing.mode) }
-                    .controlSize(.small)
+                Button { upload.framing = Framing(mode: upload.framing.mode) } label: {
+                    Label("Reset position and zoom", systemImage: "arrow.counterclockwise")
+                }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("COLOUR").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                SectionLabel("Colour")
                 if upload.isGIF {
-                    Picker("Colours", selection: $upload.gifColors) {
-                        ForEach(ImagePipeline.GIFColors.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    VStack(spacing: 8) {
+                        ForEach(ImagePipeline.GIFColors.allCases, id: \.self) { colors in
+                            OptionTile(selected: upload.gifColors == colors, action: { upload.gifColors = colors }) {
+                                HStack(alignment: .top, spacing: 10) {
+                                    TileCheck(on: upload.gifColors == colors)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(colors.rawValue).font(.system(size: 14, weight: .semibold))
+                                        Text(colors == .shared ? "Exact colours where possible, else a best-fit palette per frame."
+                                                               : "The fixed 252-colour palette. Use it if the other looks wrong.")
+                                            .font(.l99Note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                            }
+                        }
                     }
-                    .labelsHidden()
-                    Text(upload.gifColors == .shared
-                         ? "Exact colours where possible, otherwise a best-fit palette for each frame."
-                         : "The fixed 252-colour palette from earlier tests. Use it if Best colours ever looks wrong.")
-                        .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Toggle("Smooth gradients (dithering)", isOn: $upload.smoothGradients)
-                    Text("The screen shows 65,536 colours. Dithering avoids banding in skies and gradients.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    OptionTile(selected: upload.smoothGradients, action: { upload.smoothGradients.toggle() }) {
+                        HStack(alignment: .top, spacing: 10) {
+                            TileCheck(on: upload.smoothGradients)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Smooth gradients").font(.system(size: 14, weight: .semibold))
+                                Text("The screen shows 65,536 colours. Dithering avoids banding in skies and gradients.")
+                                    .font(.l99Note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
                 }
             }
 
             if upload.isGIF { gifPanel }
 
-            Spacer()
+            Spacer(minLength: 0)
             uploadControls
         }
-        .padding(20)
+        .padding(24)
     }
 
     private var gifPanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("ANIMATION").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel("Animation")
             if let source = upload.source {
                 if let animation = upload.animation {
-                    Text("\(animation.frameCount) frames · \(String(format: "%.1f", animation.seconds)) s · "
-                         + ByteCountFormatter.string(fromByteCount: Int64(animation.blob.count), countStyle: .file)
+                    Text("\(animation.frameCount) frames · \(String(format: "%.1f", animation.seconds)) s")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(ByteCountFormatter.string(fromByteCount: Int64(animation.blob.count), countStyle: .file)
                          + " of " + ByteCountFormatter.string(fromByteCount: Int64(ScreenProtocol.gifMaxBytes), countStyle: .file))
-                        .font(.callout)
+                        .font(.l99Note).foregroundStyle(.secondary)
+                    ProgressView(value: min(1, Double(animation.blob.count) / Double(ScreenProtocol.gifMaxBytes))).tint(Studio.accent)
                     ForEach(animation.fixes, id: \.self) { fix in
-                        Label(fix, systemImage: "wand.and.stars").font(.caption)
+                        Label(fix, systemImage: "wand.and.stars").font(.l99Note)
                     }
                 } else if let progress = upload.preparing {
-                    ProgressView("Preparing frames…", value: progress)
+                    ProgressView("Preparing frames…", value: progress).tint(Studio.accent)
                 } else {
                     Text("\(source.frames.count) frames · \(String(format: "%.1f", source.duration)) s")
-                        .font(.callout)
+                        .font(.system(size: 15, weight: .semibold))
                     if source.frames.count > GIFContainer.maxFrames {
                         Label("More than \(GIFContainer.maxFrames) frames; some will be left out evenly.",
-                              systemImage: "exclamationmark.triangle").font(.caption)
+                              systemImage: "exclamationmark.triangle").font(.l99Note)
                     }
                     Button("Prepare and check size") { Task { await upload.prepareAnimation() } }
-                        .controlSize(.small)
                 }
                 if let error = upload.prepareError {
-                    Text(error).font(.caption).foregroundStyle(.red)
+                    Text(error).font(.l99Note).foregroundStyle(.red)
                 }
             } else {
-                Text("Frames, timing and size checks appear here.").font(.caption).foregroundStyle(.secondary)
+                Text("Frames, timing and size checks appear here.").font(.l99Note).foregroundStyle(.secondary)
             }
         }
-        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .studioCard(padding: 14)
     }
 
     private var uploadControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             TransferStatus(transfer: model.transfer)
             if let error = upload.saveError {
-                Text(error).font(.caption).foregroundStyle(.red)
+                Text(error).font(.l99Note).foregroundStyle(.red)
             }
             if !model.devices.screen {
-                Text("Plug in the USB cable to upload. The 2.4 GHz dongle can't carry pictures.")
-                    .font(.caption).foregroundStyle(.orange)
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "cable.connector.horizontal").font(.system(size: 15))
+                    Text("Plug in the USB cable to upload. The 2.4 GHz dongle can't carry pictures.")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.system(size: 13))
+                .foregroundStyle(Color(light: 0x8A3A12, dark: 0xF5B48A))
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Studio.accentSoft, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             Button {
                 Task { await sendToScreen() }
             } label: {
-                Text(model.transfer.isBusy ? "Uploading…" : "Upload").frame(maxWidth: .infinity)
+                Label(model.transfer.isBusy ? "Uploading…" : "Upload to \(upload.slot.displayName.lowercased())", systemImage: "arrow.up.circle.fill")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.studioPrimary)
             .controlSize(.large)
             .disabled(!canUpload)
         }

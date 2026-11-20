@@ -6,7 +6,7 @@ struct MenuView: View {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
 
-    private var open: WindowOpener { WindowOpener(openWindow: openWindow) }
+    private var open: WindowOpener { WindowOpener(openWindow: openWindow, model: model) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -16,7 +16,7 @@ struct MenuView: View {
             if let interrupted = model.transfer.interrupted, !model.transfer.isBusy {
                 Notice(systemImage: "exclamationmark.triangle", tint: .orange,
                        text: "“\(interrupted.name)” didn't finish uploading.") {
-                    Button("Fix it…") { open(WindowID.recovery) }
+                    Button("Fix it…") { open(.recovery) }
                 }
             }
 
@@ -47,7 +47,7 @@ struct MenuView: View {
                     }
                 }
                 Button {
-                    open(WindowID.upload)
+                    open(.upload)
                 } label: {
                     Label("Upload image or GIF…", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
@@ -62,10 +62,10 @@ struct MenuView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 2) {
-                MenuLink("Library…", systemImage: "photo.on.rectangle") { open(WindowID.library) }
-                MenuLink("Skins…", systemImage: "paintpalette") { open(WindowID.skins) }
-                MenuLink("Recovery…", systemImage: "arrow.counterclockwise") { open(WindowID.recovery) }
-                MenuLink("Music and key lighting…", systemImage: "waveform") { open(WindowID.music) }
+                MenuLink("Library…", systemImage: "photo.on.rectangle") { open(.library) }
+                MenuLink("Skins…", systemImage: "paintpalette") { open(.skins) }
+                MenuLink("Recovery…", systemImage: "arrow.counterclockwise") { open(.recovery) }
+                MenuLink("Effects…", systemImage: "waveform") { open(.music) }
             }
 
             Divider()
@@ -138,8 +138,7 @@ struct MenuView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "keyboard")
-                .font(.title2)
+            L99Mark(size: 30, levels: model.keyboard.status.musicPlaying ? model.keyboard.status.levels : [])
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("AULA L99").font(.headline)
@@ -271,24 +270,27 @@ struct Notice<Actions: View>: View {
     let systemImage: String
     let tint: Color
     let text: String
+    /// The window's larger size; the menu keeps the compact one.
+    var large = false
     @ViewBuilder var actions: () -> Actions
 
-    init(systemImage: String, tint: Color, text: String, @ViewBuilder actions: @escaping () -> Actions = { EmptyView() }) {
+    init(systemImage: String, tint: Color, text: String, large: Bool = false, @ViewBuilder actions: @escaping () -> Actions = { EmptyView() }) {
         self.systemImage = systemImage
         self.tint = tint
         self.text = text
+        self.large = large
         self.actions = actions
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: systemImage).foregroundStyle(tint).accessibilityHidden(true)
-            Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: large ? .center : .top, spacing: large ? 12 : 8) {
+            Image(systemName: systemImage).font(large ? .system(size: 16, weight: .medium) : nil).foregroundStyle(tint).accessibilityHidden(true)
+            Text(text).font(large ? .system(size: 13.5) : .callout).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            actions().controlSize(.small)
+            actions().controlSize(large ? .regular : .small)
         }
-        .padding(8)
-        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .padding(large ? 14 : 10)
+        .background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
